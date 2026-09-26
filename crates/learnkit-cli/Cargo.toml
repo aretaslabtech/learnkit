@@ -1,0 +1,29 @@
+[package]
+name = "learnkit-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "learnkit"
+path = "src/main.rs"
+
+[dependencies]
+learnkit-core = { workspace = true }
+learnkit-store = { workspace = true }
+learnkit-profile = { workspace = true }
+learnkit-agent = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+is-terminal = { workspace = true }
+dialoguer = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+assert_cmd = "2"
+
+[lints]
+workspace = true

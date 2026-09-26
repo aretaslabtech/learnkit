@@ -1,0 +1,14 @@
+[package]
+name = "learnkit-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+learnkit-core = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

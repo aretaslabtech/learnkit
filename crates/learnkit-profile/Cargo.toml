@@ -1,0 +1,11 @@
+[package]
+name = "learnkit-profile"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+learnkit-core = { workspace = true }
+serde = { workspace = true }
+
+[lints]
+workspace = true

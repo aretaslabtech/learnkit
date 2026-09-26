@@ -1,0 +1,11 @@
+/target/
+/.codebase-memory-mcp/
+**/*.rs.bk
+*.pdb
+.idea/
+.vscode/
+*.log
+.env
+.env.*
+.DS_Store
+Thumbs.db
