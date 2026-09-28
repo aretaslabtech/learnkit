@@ -78,7 +78,7 @@ mod tests {
         let second = install_agent(dir.path(), "claude").unwrap();
 
         assert!(!second.is_blocked());
-        assert_eq!(second.installed_files.len(), 2);
+        assert_eq!(second.installed_files.len(), 3);
     }
 
     #[test]

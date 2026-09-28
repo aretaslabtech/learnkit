@@ -1,0 +1,17 @@
+[package]
+name = "learnkit-anki"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+learnkit-core = { workspace = true }
+learnkit-cards = { workspace = true }
+learnkit-media = { workspace = true }
+sha2 = { workspace = true }
+rusqlite = { workspace = true }
+zip = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

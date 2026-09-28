@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Manual de uso de LearnKit</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --accent: #0a6b52;
+    --accent-bg: #e9f6f1;
+    --border: #e0e0e0;
+    --code-bg: #f4f4f4;
+    --table-head: #f0f0f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c;
+      --fg: #e8e8e8;
+      --muted: #a0a0a0;
+      --accent: #4fd1a5;
+      --accent-bg: #10261f;
+      --border: #333;
+      --code-bg: #1f2226;
+      --table-head: #21242a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16181c;
+    --fg: #e8e8e8;
+    --muted: #a0a0a0;
+    --accent: #4fd1a5;
+    --accent-bg: #10261f;
+    --border: #333;
+    --code-bg: #1f2226;
+    --table-head: #21242a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 0 16px 4rem;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; margin-top: 2rem; }
+  h2 {
+    font-size: 1.3rem;
+    margin-top: 2.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.05rem; margin-top: 1.5rem; }
+  p, li { color: var(--fg); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 0.9rem 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+  }
+  pre code { background: none; padding: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.92rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--table-head); }
+  nav.toc {
+    background: var(--accent-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    margin: 1.5rem 0;
+  }
+  nav.toc h2 { margin-top: 0; border-bottom: none; font-size: 1.05rem; }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; }
+  nav.toc li { margin: 0.25rem 0; }
+  .badge {
+    display: inline-block;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-radius: 999px;
+    padding: 0.1rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-bg);
+    padding: 0.7rem 1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+  }
+  footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<span class="badge">LearnKit</span>
+<h1>Manual de uso de LearnKit</h1>
+<p>Guía práctica para usar LearnKit de principio a fin: desde inicializar un proyecto hasta tener un mazo de Anki, un examen y tu progreso por destreza. Todos los comandos de este manual están verificados contra el binario real (incluida una importación real en Anki Desktop).</p>
+
+<nav class="toc">
+<h2>Índice</h2>
+<ol>
+  <li><a href="#s1">Compilar el binario</a></li>
+  <li><a href="#s2">Inicializar un proyecto</a></li>
+  <li><a href="#s3">Crear una sesión de clase</a></li>
+  <li><a href="#s4">Transcribir el audio</a></li>
+  <li><a href="#s5">Añadir vocabulario</a></li>
+  <li><a href="#s6">Generar tarjetas</a></li>
+  <li><a href="#s7">Exportar a Anki</a></li>
+  <li><a href="#s8">Generar y hacer un examen</a></li>
+  <li><a href="#s9">Ver tu progreso</a></li>
+  <li><a href="#s10">Usar un agente (Claude/Codex) para sugerir vocabulario</a></li>
+  <li><a href="#s11">Referencia de comandos</a></li>
+  <li><a href="#s12">Solución de problemas</a></li>
+  <li><a href="#s13">Qué no hace (todavía) LearnKit</a></li>
+</ol>
+</nav>
+
+<h2 id="s1">1. Instalar el binario</h2>
+<pre><code>cargo install --path crates/learnkit-cli</code></pre>
+<p>Esto compila e instala <code>learnkit</code> en <code>~/.cargo/bin</code> (en Windows: <code>%USERPROFILE%\.cargo\bin</code>), que normalmente ya está en tu <code>PATH</code> si instalaste Rust con <code>rustup</code>. A partir de aquí puedes llamar a <code>learnkit</code> desde cualquier carpeta, no solo desde dentro de este repositorio.</p>
+<p>Si solo quieres compilarlo sin instalarlo (por ejemplo, para desarrollo), usa <code>cargo build --release</code>; el binario queda en <code>target/release/learnkit</code> (<code>.exe</code> en Windows) pero solo es accesible con la ruta completa.</p>
+<p>Requisito: toolchain de Rust estable. Nada más es obligatorio para este primer paso — whisper.cpp, Piper y la red solo hacen falta para pasos concretos más adelante (ver <a href="#s12">§12</a>).</p>
+
+<h2 id="s2">2. Inicializar un proyecto</h2>
+<pre><code>learnkit init --profile language --agents claude</code></pre>
+<ul>
+  <li><code>--profile language</code>: activa el perfil de idiomas (vocabulario, IPA, variedad <code>en-GB</code> por defecto).</li>
+  <li><code>--agents claude</code>: instala la integración de Claude (<code>CLAUDE.md</code> + Skills). También puedes usar <code>codex</code>, o ambos separados por comas.</li>
+</ul>
+<p>Si no pasas <code>--profile</code>/<code>--agents</code> y estás en una terminal interactiva, LearnKit te los pregunta con un menú. Comprueba el resultado:</p>
+<pre><code>learnkit status --json</code></pre>
+
+<h2 id="s3">3. Crear una sesión de clase</h2>
+<p>Cada sesión agrupa el material de una clase concreta.</p>
+<pre><code>learnkit session new "EOI — Unit 5 phrasal verbs"</code></pre>
+<p>Te devuelve un <code>session_id</code> (ejemplo: <code>eoi-unit-5-phrasal-verbs-a1b2c3d4</code>). Guárdalo, lo necesitas en casi todos los comandos siguientes.</p>
+<p>Copia tus fuentes (notas, audio, imágenes) a la sesión e inventarialas:</p>
+<pre><code>learnkit ingest ./mis-notas.md ./clase.wav ./pizarra.jpg --session &lt;session_id&gt;
+learnkit inventory --session &lt;session_id&gt;</code></pre>
+<p><code>inventory</code> es idempotente: puedes repetirlo cuando quieras. Si cambias el contenido de una fuente y vuelves a inventariar, verás <code>updated</code> en vez de <code>unchanged</code>.</p>
+
+<h2 id="s4">4. Transcribir el audio</h2>
+<p><strong>Opción A — tienes whisper.cpp instalado:</strong></p>
+<pre><code>learnkit transcribe --session &lt;session_id&gt;</code></pre>
+<p><strong>Opción B — no tienes whisper.cpp, pero ya tienes una transcripción</strong> (hecha con Buzz, subtítulos exportados, etc.):</p>
+<pre><code>learnkit transcribe import ./transcripcion.srt --source &lt;source_id&gt; --session &lt;session_id&gt;</code></pre>
+<p><code>&lt;source_id&gt;</code> es el id de la fuente de audio (aparece en la salida de <code>inventory --json</code>, campo <code>sources[].id</code>).</p>
+<p>Puedes comprobar qué ve LearnKit de tu sesión (notas + segmentos de transcripción) con:</p>
+<pre><code>learnkit session show &lt;session_id&gt; --json</code></pre>
+
+<h2 id="s5">5. Añadir vocabulario</h2>
+<p>Confirma cada palabra o expresión que quieras estudiar:</p>
+<pre><code>learnkit learn vocabulary add \
+  --session &lt;session_id&gt; \
+  --lemma "get away with" \
+  --sense "hacer algo malo sin ser castigado" \
+  --source &lt;source_id&gt; \
+  --locator "segment:00:02:30" \
+  --suggested-by manual</code></pre>
+<ul>
+  <li><code>--source</code> debe ser un id que exista en el inventario de esa sesión (LearnKit lo valida y rechaza typos).</li>
+  <li>Si la misma expresión ya existe de una sesión anterior, se reutiliza — no se duplica.</li>
+  <li><code>--suggested-by agent</code> en vez de <code>manual</code> si viene de una sugerencia de tu agente (ver <a href="#s10">§10</a>).</li>
+</ul>
+
+<h2 id="s6">6. Generar tarjetas</h2>
+<pre><code>learnkit cards build --session &lt;session_id&gt;</code></pre>
+<p>Para cada palabra sin imagen/audio propio, LearnKit:</p>
+<ul>
+  <li>busca una imagen libre en Wikimedia Commons (con licencia y atribución guardadas),</li>
+  <li>genera audio de pronunciación con Piper (si lo tienes instalado).</li>
+</ul>
+<p>Comprueba el resultado:</p>
+<pre><code>learnkit cards validate --session &lt;session_id&gt; --json</code></pre>
+<p>Cada tarjeta aparece como <code>complete</code>, <code>pending_image</code> o <code>pending_audio</code>. Una tarjeta <code>pending_*</code> normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que Piper no está instalado — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).</p>
+
+<h2 id="s7">7. Exportar a Anki</h2>
+<pre><code>learnkit export anki --session &lt;session_id&gt; --out dist/mi-mazo.apkg</code></pre>
+<p>Si alguna tarjeta no está <code>complete</code>, el comando falla explícitamente (código de salida <code>40</code>) indicando exactamente cuál y qué le falta — nunca genera un <code>.apkg</code> a medias.</p>
+<div class="callout">Importa <code>dist/mi-mazo.apkg</code> en Anki Desktop (<code>Archivo → Importar...</code>). <strong>Verificado</strong>: se importa correctamente, con imagen y audio en el lado que corresponda.</div>
+
+<h2 id="s8">8. Generar y hacer un examen</h2>
+<pre><code>learnkit assessment build --session &lt;session_id&gt;
+learnkit export exam --assessment &lt;assessment_id&gt; --session &lt;session_id&gt; --out dist/examen.html</code></pre>
+<p><code>&lt;assessment_id&gt;</code> te lo devuelve <code>assessment build --json</code> (campo <code>assessment_id</code>).</p>
+<p>Abre <code>dist/examen.html</code> en tu navegador (no necesita servidor ni conexión). Al terminar, pulsa "Finish exam" y "Download results" — se descarga un <code>results.json</code>.</p>
+<p>Importa esos resultados:</p>
+<pre><code>learnkit attempt import ./results.json --assessment &lt;assessment_id&gt; --session &lt;session_id&gt;</code></pre>
+<p>Puedes repetir el examen y reimportar tantas veces como quieras — nunca se sobrescriben intentos anteriores.</p>
+
+<h2 id="s9">9. Ver tu progreso</h2>
+<pre><code>learnkit progress
+learnkit progress --skill listening</code></pre>
+<p>Muestra precisión y número de intentos, agregados por elemento de vocabulario y por destreza (<code>recognition</code>/<code>production</code>/<code>listening</code>). Se recalcula siempre desde el historial real de intentos, nunca desde un valor guardado.</p>
+
+<h2 id="s10">10. Usar un agente (Claude/Codex) para sugerir vocabulario</h2>
+<p>Si instalaste la integración de Claude o Codex (<code>--agents</code> en el paso 2), tu agente tiene una Skill (<code>learnkit-language</code>) que:</p>
+<ol>
+  <li>Lee <code>learnkit session show &lt;session_id&gt; --json</code> (tus notas + segmentos de transcripción).</li>
+  <li>Te propone candidatos de vocabulario con su significado.</li>
+  <li><strong>Nunca</strong> los guarda por su cuenta — solo ejecuta <code>learn vocabulary add</code> cuando tú confirmas cada uno.</li>
+</ol>
+<p>En la práctica: simplemente pídele a tu agente "sugiéreme vocabulario de la sesión <code>&lt;session_id&gt;</code>" y sigue la conversación.</p>
+
+<h2 id="s11">11. Referencia de comandos</h2>
+<table>
+<thead><tr><th>Comando</th><th>Qué hace</th></tr></thead>
+<tbody>
+<tr><td><code>learnkit init [PATH] [--profile &lt;id&gt;] [--agents &lt;ids&gt;] [--shell sh|ps] [--json]</code></td><td>Inicializa (o reafirma) un proyecto.</td></tr>
+<tr><td><code>learnkit agent install codex|claude [--path P]</code></td><td>Instala/reinstala la integración de un agente.</td></tr>
+<tr><td><code>learnkit status [--session id] [--json]</code></td><td>Estado del proyecto (y de las fases de una sesión, si se indica).</td></tr>
+<tr><td><code>learnkit session new "&lt;título&gt;" [--profile id]</code></td><td>Crea una sesión.</td></tr>
+<tr><td><code>learnkit session list</code> / <code>show &lt;id&gt;</code></td><td>Lista o muestra el detalle de una sesión.</td></tr>
+<tr><td><code>learnkit ingest &lt;ficheros...&gt; --session id</code></td><td>Copia fuentes a la sesión.</td></tr>
+<tr><td><code>learnkit inventory --session id</code></td><td>Inventaría (tipo, tamaño, hash) las fuentes de la sesión.</td></tr>
+<tr><td><code>learnkit transcribe --session id [--source id] [--model path]</code></td><td>Transcribe audio con whisper.cpp.</td></tr>
+<tr><td><code>learnkit transcribe import &lt;fichero&gt; --source id --session id</code></td><td>Importa una transcripción existente.</td></tr>
+<tr><td><code>learnkit learn vocabulary add --session id --lemma "t" --sense "s" --source id [--locator l] [--suggested-by agent|manual]</code></td><td>Confirma una entrada de vocabulario.</td></tr>
+<tr><td><code>learnkit cards build --session id [--template id]</code></td><td>Genera tarjetas a partir del vocabulario.</td></tr>
+<tr><td><code>learnkit cards validate --session id [--json]</code></td><td>Comprueba qué tarjetas están completas.</td></tr>
+<tr><td><code>learnkit export anki --session id --out fichero.apkg</code></td><td>Exporta el mazo.</td></tr>
+<tr><td><code>learnkit assessment build --session id</code></td><td>Genera el banco de preguntas (recognition/production/listening).</td></tr>
+<tr><td><code>learnkit export exam --assessment id --session id --out fichero.html</code></td><td>Genera el examen HTML.</td></tr>
+<tr><td><code>learnkit attempt import resultados.json --assessment id --session id</code></td><td>Importa los resultados de un examen.</td></tr>
+<tr><td><code>learnkit progress [--skill s] [--json]</code></td><td>Muestra el progreso agregado.</td></tr>
+</tbody>
+</table>
+<p>Todos los comandos aceptan <code>--json</code> para salida estructurada (pensada para agentes/scripts) y <code>--path P</code> para operar sobre un proyecto que no es el directorio actual.</p>
+
+<h2 id="s12">12. Solución de problemas</h2>
+<table>
+<thead><tr><th>Situación</th><th>Qué significa</th><th>Qué hacer</th></tr></thead>
+<tbody>
+<tr><td><code>transcribe</code> falla con "tool not found"</td><td>No tienes <code>whisper-cli</code> (whisper.cpp) instalado o no está en el <code>PATH</code>.</td><td>Instálalo, o usa <code>transcribe import</code> con una transcripción ya hecha. Exit code <code>30</code>.</td></tr>
+<tr><td><code>cards build</code> deja audio sin generar</td><td>No tienes <code>piper</code> instalado.</td><td>Instálalo con una voz <code>en-GB</code>, o suministra tú el audio. No bloquea el resto de la tarjeta si el audio es opcional en la plantilla.</td></tr>
+<tr><td>Una tarjeta queda <code>pending_image</code></td><td>Wikimedia Commons no devolvió ninguna imagen con licencia reutilizable (frecuente en modismos/expresiones abstractas).</td><td>Suministra tú una imagen, o acepta que esa tarjeta no tenga imagen.</td></tr>
+<tr><td><code>export anki</code> falla con exit code <code>40</code></td><td>Alguna tarjeta no está <code>complete</code>.</td><td>El mensaje indica exactamente cuál y qué le falta; corrígela o exporta solo las que sí lo están.</td></tr>
+<tr><td>Sin conexión a internet</td><td><code>cards build</code> no puede buscar en Wikimedia Commons.</td><td>Es el único punto de red de toda la herramienta; todo lo demás funciona offline. El fallo se trata como "sin imagen encontrada", no como error fatal.</td></tr>
+</tbody>
+</table>
+
+<h2 id="s13">13. Qué no hace (todavía) LearnKit</h2>
+<ul>
+  <li>Exportar a Kahoot o Blooket (previsto en el roadmap, no implementado).</li>
+  <li>Un comando <code>learnkit doctor</code> que compruebe de antemano qué herramientas externas tienes instaladas.</li>
+  <li>Un <code>learnkit run &lt;fase&gt;</code> / <code>learnkit validate</code> genéricos — cada comando (<code>inventory</code>, <code>transcribe</code>, <code>cards build</code>...) valida sus propias dependencias directamente.</li>
+  <li>Perfiles no lingüísticos (geografía, historia, Godot) — el perfil <code>language-en</code> es el único implementado por ahora.</li>
+  <li>Verificación real de importación en TAO/QTI, Kahoot o Blooket — solo Anki Desktop está verificado con datos reales.</li>
+</ul>
+
+<footer>
+  LearnKit — documentación generada a partir de <code>docs/manual.md</code>. Ver también <a href="../README.md">README</a> y <a href="../specs/">specs/</a> para el detalle de cada feature.
+</footer>
+
+</div>
+</body>
+</html>

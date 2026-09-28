@@ -6,6 +6,12 @@ members = [
     "crates/learnkit-store",
     "crates/learnkit-profile",
     "crates/learnkit-agent",
+    "crates/learnkit-workflow",
+    "crates/learnkit-transcription",
+    "crates/learnkit-cards",
+    "crates/learnkit-media",
+    "crates/learnkit-anki",
+    "crates/learnkit-assessment",
 ]
 
 [workspace.package]
@@ -19,6 +25,7 @@ all = "warn"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 toml = "0.8"
 thiserror = "1"
 anyhow = "1"
@@ -28,8 +35,18 @@ sha2 = "0.10"
 is-terminal = "0.4"
 dialoguer = "0.11"
 tempfile = "3"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+zip = "0.6"
+walkdir = "2"
 
 learnkit-core = { path = "crates/learnkit-core" }
 learnkit-store = { path = "crates/learnkit-store" }
 learnkit-profile = { path = "crates/learnkit-profile" }
 learnkit-agent = { path = "crates/learnkit-agent" }
+learnkit-workflow = { path = "crates/learnkit-workflow" }
+learnkit-transcription = { path = "crates/learnkit-transcription" }
+learnkit-cards = { path = "crates/learnkit-cards" }
+learnkit-media = { path = "crates/learnkit-media" }
+learnkit-anki = { path = "crates/learnkit-anki" }
+learnkit-assessment = { path = "crates/learnkit-assessment" }

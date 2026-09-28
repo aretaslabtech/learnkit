@@ -1,0 +1,16 @@
+[package]
+name = "learnkit-cards"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+learnkit-core = { workspace = true }
+learnkit-media = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

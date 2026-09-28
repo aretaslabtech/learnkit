@@ -1,5 +1,6 @@
 mod commands;
 mod interactive;
+mod session_context;
 
 use clap::{Parser, Subcommand};
 
@@ -18,6 +19,26 @@ enum Command {
     Agent(commands::agent::AgentArgs),
     /// Report whether a folder contains a valid LearnKit project.
     Status(commands::status::StatusArgs),
+    /// Manage sessions (a session groups a class's sources and workflow).
+    Session(commands::session::SessionArgs),
+    /// Copy files into a session's `input/` directory.
+    Ingest(commands::inventory::IngestArgs),
+    /// Inventory a session's sources (type, size, integrity hash).
+    Inventory(commands::inventory::InventoryArgs),
+    /// Transcribe (or import a transcription for) a session's audio sources.
+    Transcribe(commands::transcribe::TranscribeArgs),
+    /// Persist confirmed learning content (vocabulary, ...).
+    Learn(commands::learn::LearnArgs),
+    /// Build or validate study cards from vocabulary learning items.
+    Cards(commands::cards::CardsArgs),
+    /// Export session artifacts to external formats (Anki, exam HTML, ...).
+    Export(commands::export::ExportArgs),
+    /// Generate the assessment question bank for a session.
+    Assessment(commands::assessment::AssessmentArgs),
+    /// Import a completed exam's results.
+    Attempt(commands::attempt::AttemptArgs),
+    /// View progress aggregated by learning item and skill.
+    Progress(commands::progress::ProgressArgs),
 }
 
 fn main() {
@@ -31,6 +52,16 @@ fn main() {
         Command::Init(args) => commands::init::run(args),
         Command::Agent(args) => commands::agent::run(args),
         Command::Status(args) => commands::status::run(args),
+        Command::Session(args) => commands::session::run(args),
+        Command::Ingest(args) => commands::inventory::run_ingest(args),
+        Command::Inventory(args) => commands::inventory::run_inventory(args),
+        Command::Transcribe(args) => commands::transcribe::run(args),
+        Command::Learn(args) => commands::learn::run(args),
+        Command::Cards(args) => commands::cards::run(args),
+        Command::Export(args) => commands::export::run(args),
+        Command::Assessment(args) => commands::assessment::run(args),
+        Command::Attempt(args) => commands::attempt::run(args),
+        Command::Progress(args) => commands::progress::run(args),
     };
 
     std::process::exit(exit_code);

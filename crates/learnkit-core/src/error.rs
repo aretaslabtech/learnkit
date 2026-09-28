@@ -1,3 +1,4 @@
+use crate::provider_error::ProviderError;
 use thiserror::Error;
 
 /// Domain-level errors shared by every LearnKit command.
@@ -30,6 +31,9 @@ pub enum LearnKitError {
     #[error("project not initialized at {path}")]
     ProjectNotInitialized { path: String },
 
+    #[error("no active session — pass --session <id> or run 'learnkit session use <id>' first")]
+    NoActiveSession,
+
     #[error("agent integration files were modified manually: {files:?}")]
     AgentFilesModified { files: Vec<String> },
 
@@ -42,6 +46,15 @@ pub enum LearnKitError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("guard blocked: {phase} — {reason}")]
+    GuardBlocked { phase: String, reason: String },
+
+    #[error(transparent)]
+    Provider(#[from] ProviderError),
+
+    #[error("exporter constraint failed: {message}")]
+    ExporterConstraint { message: String },
 }
 
 impl LearnKitError {
@@ -53,9 +66,13 @@ impl LearnKitError {
             LearnKitError::NoAgentSelected => "NO_AGENT_SELECTED",
             LearnKitError::ShellUnsupported { .. } => "SHELL_UNSUPPORTED",
             LearnKitError::ProjectNotInitialized { .. } => "PROJECT_NOT_INITIALIZED",
+            LearnKitError::NoActiveSession => "NO_ACTIVE_SESSION",
             LearnKitError::AgentFilesModified { .. } => "AGENT_FILES_MODIFIED",
             LearnKitError::SelectionCancelled => "SELECTION_CANCELLED",
             LearnKitError::Filesystem { .. } => "FILESYSTEM_ERROR",
+            LearnKitError::GuardBlocked { .. } => "PHASE_BLOCKED",
+            LearnKitError::Provider(_) => "PROVIDER_FAILED",
+            LearnKitError::ExporterConstraint { .. } => "EXPORT_FAILED",
         }
     }
 
@@ -67,8 +84,11 @@ impl LearnKitError {
             | LearnKitError::NoAgentSelected
             | LearnKitError::ShellUnsupported { .. }
             | LearnKitError::ProjectNotInitialized { .. }
+            | LearnKitError::NoActiveSession
             | LearnKitError::SelectionCancelled => 2,
-            LearnKitError::AgentFilesModified { .. } => 20,
+            LearnKitError::AgentFilesModified { .. } | LearnKitError::GuardBlocked { .. } => 20,
+            LearnKitError::Provider(_) => 30,
+            LearnKitError::ExporterConstraint { .. } => 40,
             LearnKitError::Filesystem { .. } => 50,
         }
     }

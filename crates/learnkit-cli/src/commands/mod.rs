@@ -1,3 +1,13 @@
 pub mod agent;
+pub mod assessment;
+pub mod attempt;
+pub mod cards;
+pub mod export;
+pub mod export_anki;
 pub mod init;
+pub mod inventory;
+pub mod learn;
+pub mod progress;
+pub mod session;
 pub mod status;
+pub mod transcribe;
