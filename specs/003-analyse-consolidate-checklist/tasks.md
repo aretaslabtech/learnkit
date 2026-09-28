@@ -66,14 +66,14 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Test de integración: una fase con checklist donde un elemento está `done` y otro `pending` se reportan por separado en `status --json`, no como un único estado de fase (FR-001/002) en `crates/learnkit-cli/tests/status_test.rs`.
-- [ ] T008 [P] [US1] Test de integración: cuando todos los elementos de una fase están `done`, la fase se reporta como completa y cada elemento aparece `done` (Acceptance Scenario 2 de US1) en `crates/learnkit-cli/tests/status_test.rs`.
-- [ ] T009 [P] [US1] Test de integración: cambiar la fuente de la que depende un elemento ya `done` lo marca como desactualizado (no `done`) en la siguiente consulta de estado (FR-004, Acceptance Scenario 3 de US1) en `crates/learnkit-cli/tests/status_test.rs`.
-- [ ] T010 [P] [US1] Test de regresión: una fase sin checklist (`inventory`) sigue reportando un único estado agregado exactamente como antes de esta feature (FR-003) en `crates/learnkit-cli/tests/status_test.rs`.
+- [X] T007 [P] [US1] Test de integración: una fase con checklist donde un elemento está `done` y otro `pending` se reportan por separado en `status --json`, no como un único estado de fase (FR-001/002) en `crates/learnkit-cli/tests/status_test.rs`.
+- [X] T008 [P] [US1] Test de integración: cuando todos los elementos de una fase están `done`, la fase se reporta como completa y cada elemento aparece `done` (Acceptance Scenario 2 de US1) en `crates/learnkit-cli/tests/status_test.rs`.
+- [X] T009 [P] [US1] Test de integración: cambiar la fuente de la que depende un elemento ya `done` lo marca como desactualizado (no `done`) en la siguiente consulta de estado (FR-004, Acceptance Scenario 3 de US1) en `crates/learnkit-cli/tests/status_test.rs`.
+- [X] T010 [P] [US1] Test de regresión: una fase sin checklist (`inventory`) sigue reportando un único estado agregado exactamente como antes de esta feature (FR-003) en `crates/learnkit-cli/tests/status_test.rs`.
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Ampliar `learnkit status --session <id>` (salida humana y `--json`) para incluir, por cada fase con checklist, el array de sus elementos con `item_id`/`state`/`pending_reason`, en `crates/learnkit-cli/src/commands/status.rs` (depende de T004).
+- [X] T011 [US1] Ampliar `learnkit status --session <id>` (salida humana y `--json`) para incluir, por cada fase con checklist, el array de sus elementos con `item_id`/`state`/`pending_reason`, en `crates/learnkit-cli/src/commands/status.rs` (depende de T004).
 
 **Checkpoint**: User Story 1 completa y comprobable de forma independiente — visibilidad del checklist ya funciona para cualquier fase que lo adopte.
 
