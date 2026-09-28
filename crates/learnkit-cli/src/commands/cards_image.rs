@@ -1,11 +1,12 @@
-//! `learnkit cards image-batch` / `image-grid crop` / `image-grid assign` —
-//! Modo 2 (generación por rejilla) of `odd/tasks/ai-image-grid-generation.md`.
+//! `learnkit cards image-batch` / `image-grid crop` / `image-grid assign` /
+//! `image-review` / `image-reject` — Modo 1 (revisión de Wikimedia) and Modo
+//! 2 (generación por rejilla) of `odd/tasks/ai-image-grid-generation.md`.
 //!
 //! Everything here is mechanical (list what's missing, crop a grid image,
-//! persist an already-approved crop as a card's image asset). Rust never
-//! judges whether an image is coherent with its concept — that's always the
-//! agent, via a Skill built on top of these commands (T7, out of scope
-//! here).
+//! persist an already-approved crop as a card's image asset, list/clear an
+//! already-resolved Wikimedia image). Rust never judges whether an image is
+//! coherent with its concept — that's always the agent, via the
+//! `learnkit-image-prompts` Skill built on top of these commands (T7).
 
 use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
@@ -16,7 +17,7 @@ use learnkit_media::asset::{self, AssetOrigin, AssetType};
 use learnkit_media::grid;
 use learnkit_profile::language::learning_item::{load_all_vocabulary_items, LearningItem};
 use learnkit_store::session_paths::SessionPaths;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,6 +82,34 @@ struct ImageGridAssignArgs {
     json: bool,
 }
 
+#[derive(Args)]
+pub struct ImageReviewArgs {
+    #[arg(long)]
+    session: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+pub struct ImageRejectArgs {
+    #[arg(long)]
+    session: Option<String>,
+    /// The learning item id whose card's front image should be rejected.
+    #[arg(long)]
+    item: String,
+    /// Why the image doesn't coherently represent the concept — recorded
+    /// durably alongside the rejected asset id so it isn't silently
+    /// re-proposed without context.
+    #[arg(long)]
+    reason: String,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Debug, Serialize)]
 struct ImageBatchItem {
     learning_item_id: String,
@@ -106,6 +135,53 @@ struct ImageGridAssignData {
     asset_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     card_id: Option<String>,
+}
+
+/// One Wikimedia-sourced image already resolved onto a card's front, listed
+/// for the agent to open and judge for coherence — never judged here.
+#[derive(Debug, Serialize)]
+struct ImageReviewItem {
+    card_id: String,
+    learning_item_id: String,
+    title: String,
+    asset_id: String,
+    /// Filesystem path to the actual image bytes, so the agent (or a human)
+    /// can open and look at it — the whole point of this listing.
+    path: String,
+    license_name: String,
+    license_url: String,
+    author: String,
+    source_url: String,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct ImageReviewData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    items: Option<Vec<ImageReviewItem>>,
+}
+
+/// Durable record of a rejected Wikimedia image — T6. Persisted one file per
+/// rejection under the session's `validation/rejected-images/` dir (same
+/// read/write-one-file-per-entity JSON convention already used for asset
+/// metadata in `learnkit-media::asset`), so a later `image-batch`/`cards
+/// build` run — or a human reading the session — can see exactly which
+/// candidate was rejected and why, instead of it being silently retried.
+#[derive(Debug, Serialize, Deserialize)]
+struct RejectedImageRecord {
+    learning_item_id: String,
+    card_id: String,
+    asset_id: String,
+    reason: String,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct ImageRejectData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    learning_item_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rejected_asset_id: Option<String>,
 }
 
 pub fn run_image_batch(args: ImageBatchArgs) -> i32 {
@@ -313,6 +389,256 @@ fn run_image_grid_assign(args: ImageGridAssignArgs) -> i32 {
         println!("{}\t{}", registered.id, card.id);
     }
     0
+}
+
+pub fn run_image_review(args: ImageReviewArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error::<ImageReviewData>(args.json, err),
+    };
+    let session_paths = SessionPaths::new(&root, &session_id);
+    let assets_dir = session_paths.assets();
+
+    let mut cards = match load_all(session_paths.root()) {
+        Ok(c) => c,
+        Err(source) => {
+            return emit_error::<ImageReviewData>(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+    // Same determinism reasoning as `image-batch`: `load_all` reads a
+    // directory, whose order isn't guaranteed.
+    cards.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let items = match load_all_vocabulary_items(&root) {
+        Ok(items) => items,
+        Err(source) => {
+            return emit_error::<ImageReviewData>(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+    let items_by_id: HashMap<String, LearningItem> =
+        items.into_iter().map(|item| (item.id.clone(), item)).collect();
+
+    let mut review_items = Vec::new();
+    for card in &cards {
+        let Some(asset_id) = front_image_asset_id(card) else {
+            continue;
+        };
+        let Ok(Some(asset)) = asset::load(&assets_dir, &asset_id) else {
+            continue;
+        };
+        // Only Wikimedia-sourced images belong here — images `Supplied` by a
+        // human, or already reviewed/generated via the grid, never need
+        // this review (they were never picked automatically, or were
+        // already coherence-checked by the agent when assigned).
+        let AssetOrigin::Fetched {
+            license_name,
+            license_url,
+            author,
+            source_url,
+            ..
+        } = &asset.origin
+        else {
+            continue;
+        };
+        let Some(item_id) = card.learning_item_ids.first() else {
+            continue;
+        };
+        let Some(item) = items_by_id.get(item_id) else {
+            continue;
+        };
+
+        review_items.push(ImageReviewItem {
+            card_id: card.id.clone(),
+            learning_item_id: item.id.clone(),
+            title: item.title.clone(),
+            asset_id: asset.id.clone(),
+            path: asset.path.display().to_string(),
+            license_name: license_name.clone(),
+            license_url: license_url.clone(),
+            author: author.clone(),
+            source_url: source_url.clone(),
+        });
+    }
+
+    if args.json {
+        Envelope::ok(
+            "IMAGE_REVIEW_LISTED",
+            ImageReviewData {
+                items: Some(review_items),
+            },
+        )
+        .print_json();
+    } else {
+        for item in &review_items {
+            println!(
+                "{}\t{}\t{}\t{}\t{} ({})",
+                item.learning_item_id,
+                item.card_id,
+                item.title,
+                item.path,
+                item.license_name,
+                item.author
+            );
+        }
+    }
+    0
+}
+
+pub fn run_image_reject(args: ImageRejectArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error::<ImageRejectData>(args.json, err),
+    };
+    let session_paths = SessionPaths::new(&root, &session_id);
+
+    let cards = match load_all(session_paths.root()) {
+        Ok(c) => c,
+        Err(source) => {
+            return emit_error::<ImageRejectData>(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    let Some(mut card) = cards
+        .into_iter()
+        .find(|c| c.learning_item_ids.iter().any(|id| id == &args.item))
+    else {
+        return emit_error::<ImageRejectData>(
+            args.json,
+            LearnKitError::ExporterConstraint {
+                message: format!(
+                    "no card found for learning item '{}' in session '{session_id}'",
+                    args.item
+                ),
+            },
+        );
+    };
+
+    let Some(rejected_asset_id) = clear_front_image_asset(&mut card) else {
+        return emit_error::<ImageRejectData>(
+            args.json,
+            LearnKitError::ExporterConstraint {
+                message: format!(
+                    "card '{}' has no front image asset to reject",
+                    card.id
+                ),
+            },
+        );
+    };
+
+    if let Err(source) = save(session_paths.root(), &card) {
+        return emit_error::<ImageRejectData>(
+            args.json,
+            LearnKitError::Filesystem {
+                path: root.display().to_string(),
+                source,
+            },
+        );
+    }
+
+    let record = RejectedImageRecord {
+        learning_item_id: args.item.clone(),
+        card_id: card.id.clone(),
+        asset_id: rejected_asset_id.clone(),
+        reason: args.reason.clone(),
+    };
+    if let Err(source) = record_rejection(&session_paths, &record) {
+        return emit_error::<ImageRejectData>(
+            args.json,
+            LearnKitError::Filesystem {
+                path: session_paths.validation().display().to_string(),
+                source,
+            },
+        );
+    }
+
+    let data = ImageRejectData {
+        learning_item_id: Some(args.item.clone()),
+        card_id: Some(card.id.clone()),
+        rejected_asset_id: Some(rejected_asset_id.clone()),
+    };
+    if args.json {
+        Envelope::ok("IMAGE_REJECTED", data).print_json();
+    } else {
+        println!("{}\t{}\t{}", args.item, card.id, rejected_asset_id);
+    }
+    0
+}
+
+/// Reads the front image block's asset id, if any, without mutating it —
+/// used by `image-review` to check what's currently assigned.
+fn front_image_asset_id(card: &CardDefinition) -> Option<String> {
+    card.front.blocks.iter().find_map(|b| match b {
+        Block::Image { asset_id } => asset_id.clone(),
+        _ => None,
+    })
+}
+
+/// Clears the card's front image block's `asset_id` back to `None` (T6:
+/// reverts the card to `pending_image`), without removing the block itself
+/// and without deleting the underlying `Asset` file — another card may still
+/// reference it via `register_or_reuse`'s dedup. Returns the asset id that
+/// was cleared, or `None` if the front had no image asset to reject.
+fn clear_front_image_asset(card: &mut CardDefinition) -> Option<String> {
+    for block in card.front.blocks.iter_mut() {
+        if let Block::Image { asset_id } = block {
+            return asset_id.take();
+        }
+    }
+    None
+}
+
+fn rejected_images_dir(session_paths: &SessionPaths) -> PathBuf {
+    session_paths.validation().join("rejected-images")
+}
+
+/// Appends a new rejection record as its own file — never overwrites a
+/// previous rejection, so the session keeps a full history of every
+/// candidate an agent has already turned down for a given concept (mirrors
+/// `learnkit_workflow::analysis::add_concept_page`'s sequential-id
+/// append-only pattern).
+fn record_rejection(
+    session_paths: &SessionPaths,
+    record: &RejectedImageRecord,
+) -> std::io::Result<PathBuf> {
+    let dir = rejected_images_dir(session_paths);
+    let existing_count = if dir.exists() {
+        fs::read_dir(&dir)?
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .ok()
+                    .map(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+                    .unwrap_or(false)
+            })
+            .count()
+    } else {
+        0
+    };
+    let path = dir.join(format!("rejection-{:03}.json", existing_count + 1));
+    let json = serde_json::to_string_pretty(record)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string()))?;
+    learnkit_core::atomic::write_atomic(&path, json.as_bytes())?;
+    Ok(path)
 }
 
 /// Sets the card's front image block to `asset_id`, replacing an existing

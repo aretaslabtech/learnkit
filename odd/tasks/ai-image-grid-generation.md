@@ -63,10 +63,10 @@ Sin cambios en la búsqueda/descarga (`WikimediaCommonsProvider`, ya con resize 
 - [x] T3 `learnkit cards image-grid crop` — recorta una rejilla R×C en N imágenes individuales.
 - [x] T4 Nuevo `AssetOrigin` (o variante) para "imagen generada por rejilla, aprobada manualmente" — distinto de `fetched` (Wikimedia) y del `generated` de audio.
 - [x] T5 `learnkit cards image-grid assign` — asigna un recorte aprobado a la tarjeta de un elemento.
-- [ ] T6 `learnkit cards image-review` / `learnkit cards image-reject` — listar y revertir imágenes de Wikimedia ya resueltas.
-- [ ] T7 Skill de agente `learnkit-image-prompts`: redacta los prompts de rejilla a partir de `image-batch`, hace la revisión de coherencia (rejilla y Wikimedia).
-- [x] T8 Tests de integración/unitarios para T2-T5 (T6 queda para cuando se implemente; mecánicos: listado, recorte, asignación — sin depender de ningún LLM real).
-- [ ] T9 Documentar el flujo completo en `docs/manual.md`/`.html`.
+- [x] T6 `learnkit cards image-review` / `learnkit cards image-reject` — listar y revertir imágenes de Wikimedia ya resueltas.
+- [x] T7 Skill de agente `learnkit-image-prompts`: redacta los prompts de rejilla a partir de `image-batch`, hace la revisión de coherencia (rejilla y Wikimedia).
+- [x] T8 Tests de integración/unitarios para T2-T5 y T6 (mecánicos: listado, recorte, asignación, revisión/rechazo de Wikimedia — sin depender de ningún LLM real).
+- [x] T9 Documentar el flujo completo en `docs/manual.md`/`.html`.
 
 ## Criterios de aceptación
 
@@ -118,8 +118,65 @@ Sin cambios en la búsqueda/descarga (`WikimediaCommonsProvider`, ya con resize 
 - Verificación: `cargo build --workspace` y `cargo clippy --workspace
   --all-targets` en verde sin warnings; `cargo test --workspace` en verde
   (todas las suites `ok`, sin fallos).
-- Fuera de este bloque de trabajo (quedan `[ ]`, según alcance del
-  encargo): T6 (`image-review`/`image-reject` de Wikimedia), T7 (Skill de
-  agente), T9 (documentación en el manual).
-- Sin commits creados todavía (según instrucción explícita de no comprometer
-  en este bloque de trabajo) ni `cargo install` ejecutado.
+- Sin commits creados todavía en el primer bloque de trabajo (T1-T5/T8,
+  según instrucción explícita de no comprometer) ni `cargo install`
+  ejecutado.
+
+2026-09-28 (segundo bloque): T6, T7 y T9 implementados; feature completa.
+
+- **T6**: `learnkit cards image-review --session <id> [--json]` y
+  `learnkit cards image-reject --session <id> --item <li_id> --reason <r>
+  [--json]`, en `crates/learnkit-cli/src/commands/cards_image.rs` (mismo
+  fichero que T2-T5, wireado en `cards.rs` como dos nuevas variantes de
+  `CardsAction`). `image-review` recorre las tarjetas de la sesión, mira el
+  `asset_id` del bloque `Image` del anverso, carga el `Asset` y filtra por
+  `origin == AssetOrigin::Fetched { .. }` (Wikimedia) — nunca lista imágenes
+  `Supplied` ni `GeneratedGrid`; devuelve card_id, learning_item_id, título,
+  asset_id, `path` (para poder abrir el fichero) y licencia/autor/URL de
+  origen. `image-reject` localiza la tarjeta del `--item` dado (falla
+  explícito con `ExporterConstraint`/exit 40 si no existe), limpia el
+  `asset_id` del bloque `Image` del anverso a `None` (vuelve a
+  `pending_image`; el fichero del `Asset` NUNCA se borra — otras tarjetas
+  pueden seguir referenciándolo vía el dedup de `register_or_reuse`; falla
+  explícito si no había nada que rechazar), guarda la tarjeta, y registra el
+  rechazo.
+  - **Registro del rechazo**: un fichero JSON por rechazo (nunca se
+    sobrescribe uno anterior — historial completo), en
+    `sessions/<session_id>/validation/rejected-images/rejection-NNN.json`
+    (usa `SessionPaths::validation()`, ya existente; convención de
+    "un fichero por entidad" ya usada en `learnkit-media::asset` para los
+    metadatos de cada asset — se usó JSON, no YAML, para no añadir
+    `serde_yaml` como dependencia nueva de `learnkit-cli`, que hoy no la
+    tiene). Contenido: `learning_item_id`, `card_id`, `asset_id` (el
+    rechazado), `reason` (el texto dado por el agente).
+- **T7**: nueva Skill `crates/learnkit-agent/templates/skills/learnkit-image-prompts/SKILL.md`,
+  registrada en `crates/learnkit-agent/src/templates.rs` exactamente igual
+  que `learnkit-analyse` (una constante `include_str!` + una entrada más en
+  el `Vec<AgentFileTemplate>` de `codex` y de `claude`). Instruye al agente
+  a: 1) llamar a `image-batch` para obtener el lote (hasta 16, repetir por
+  lotes si hay más); 2) redactar un único prompt de rejilla 4x4 en orden de
+  lectura, sin texto/etiquetas dentro de la imagen; 3) pedir al humano que
+  ejecute el prompt en ChatGPT y le devuelva la ruta del fichero resultante;
+  4) llamar a `image-grid crop`; 5) mirar cada recorte y juzgar coherencia
+  contra el concepto en la misma posición, asignando solo los coherentes
+  vía `image-grid assign` y nunca los que no lo son; 6) el mismo principio
+  para `image-review`/`image-reject` de Wikimedia. Deja explícito, igual que
+  `learnkit-analyse`, que el CLI nunca juzga contenido — eso es siempre del
+  agente, y nunca debe asignar/aceptar una imagen que no ha mirado.
+  `install::tests::reinstalling_unchanged_files_is_idempotent` actualizado
+  de 4 a 5 ficheros instalados (nueva Skill).
+- **T9**: `docs/manual.md` y `docs/manual.html` — dos subsecciones nuevas
+  añadidas al final de §8 "Generar tarjetas" ("Revisar la coherencia de las
+  imágenes de Wikimedia" y "Generar imágenes por rejilla 4x4 para conceptos
+  abstractos"), un párrafo nuevo en §12 mencionando la Skill
+  `learnkit-image-prompts`, y 5 filas nuevas en la tabla "Referencia de
+  comandos" de §13 (`image-batch`, `image-grid crop`, `image-grid assign`,
+  `image-review`, `image-reject`). Ninguna sección se renumeró — mismo
+  patrón que se usó para documentar `export study-guide` dentro de §9.
+- Verificación final: `cargo build --workspace`, `cargo clippy --workspace
+  --all-targets` (sin warnings) y `cargo test --workspace` en verde — 245
+  tests pasados, 0 fallos, en las 11 crates del workspace (incluye los 3
+  tests nuevos de T6 en `cards_image_test.rs`, ahora 8/8 en ese fichero).
+- Sin commits creados en este segundo bloque tampoco (instrucción explícita
+  del encargo) ni `cargo install` ejecutado — feature T0-T9 completa, lista
+  para revisión/commit.

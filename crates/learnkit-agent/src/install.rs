@@ -79,8 +79,9 @@ mod tests {
 
         assert!(!second.is_blocked());
         // CLAUDE.md + learnkit-session + learnkit-language + learnkit-analyse
-        // (feature 003 added the last one, see `templates.rs`).
-        assert_eq!(second.installed_files.len(), 4);
+        // + learnkit-image-prompts (ai-image-grid-generation added the last
+        // one, see `templates.rs`).
+        assert_eq!(second.installed_files.len(), 5);
     }
 
     #[test]

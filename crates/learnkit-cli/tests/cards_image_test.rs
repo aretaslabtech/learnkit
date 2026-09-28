@@ -355,3 +355,216 @@ fn crop_via_cli(grid_path: &std::path::Path, out_dir: &std::path::Path) {
         .assert()
         .success();
 }
+
+// --- T6: `image-review` / `image-reject` (Modo 1, revisión de Wikimedia). ---
+
+/// Registers a real `Asset` with the given origin in the session's asset
+/// registry (content varies by `seed` so distinct calls never dedup onto
+/// the same asset id), and returns its id.
+fn register_asset(
+    session_paths: &SessionPaths,
+    seed: u8,
+    origin: learnkit_media::asset::AssetOrigin,
+) -> String {
+    let content = vec![seed; 32];
+    let asset = learnkit_media::asset::register_or_reuse(
+        &session_paths.assets(),
+        &format!("fp-{seed}"),
+        learnkit_media::asset::AssetType::Image,
+        &content,
+        "png",
+        "image/png",
+        origin,
+    )
+    .unwrap();
+    asset.id
+}
+
+fn fetched_origin() -> learnkit_media::asset::AssetOrigin {
+    learnkit_media::asset::AssetOrigin::Fetched {
+        provider: "wikimedia-commons".to_string(),
+        license_name: "CC BY-SA 4.0".to_string(),
+        license_url: "https://creativecommons.org/licenses/by-sa/4.0/".to_string(),
+        author: "Jane Doe".to_string(),
+        source_url: "https://commons.wikimedia.org/wiki/File:example.png".to_string(),
+    }
+}
+
+fn card_with_front_image(card_id: &str, learning_item_id: &str, asset_id: &str) -> CardDefinition {
+    CardDefinition {
+        id: card_id.to_string(),
+        learning_item_ids: vec![learning_item_id.to_string()],
+        template: "image-to-production-v1".to_string(),
+        front: Side {
+            blocks: vec![Block::Image {
+                asset_id: Some(asset_id.to_string()),
+            }],
+        },
+        back: Side { blocks: vec![] },
+    }
+}
+
+#[test]
+fn image_review_lists_only_wikimedia_sourced_images() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, item_id) = session_with_vocabulary_item(dir.path());
+    let session_paths = SessionPaths::new(dir.path(), &session_id);
+
+    let wikimedia_asset_id = register_asset(&session_paths, 1, fetched_origin());
+    let card_id = format!("card-{item_id}");
+    learnkit_cards::card::save(
+        session_paths.root(),
+        &card_with_front_image(&card_id, &item_id, &wikimedia_asset_id),
+    )
+    .unwrap();
+
+    // A second card whose front image came from grid generation, not
+    // Wikimedia — must NOT show up in the review listing.
+    let grid_asset_id = register_asset(
+        &session_paths,
+        2,
+        learnkit_media::asset::AssetOrigin::GeneratedGrid {
+            provider: "chatgpt-grid-manual".to_string(),
+        },
+    );
+    learnkit_cards::card::save(
+        session_paths.root(),
+        &card_with_front_image("card-li-grid", "li-grid", &grid_asset_id),
+    )
+    .unwrap();
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("image-review")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    let items = json["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["card_id"], card_id);
+    assert_eq!(items[0]["learning_item_id"], item_id);
+    assert_eq!(items[0]["title"], "whiteboard");
+    assert_eq!(items[0]["asset_id"], wikimedia_asset_id);
+    assert_eq!(items[0]["license_name"], "CC BY-SA 4.0");
+    assert_eq!(items[0]["author"], "Jane Doe");
+    assert!(items[0]["path"].as_str().unwrap().contains(&wikimedia_asset_id));
+}
+
+#[test]
+fn image_reject_clears_the_asset_and_records_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, item_id) = session_with_vocabulary_item(dir.path());
+    let session_paths = SessionPaths::new(dir.path(), &session_id);
+
+    let wikimedia_asset_id = register_asset(&session_paths, 3, fetched_origin());
+    let card_id = format!("card-{item_id}");
+    learnkit_cards::card::save(
+        session_paths.root(),
+        &card_with_front_image(&card_id, &item_id, &wikimedia_asset_id),
+    )
+    .unwrap();
+
+    learnkit()
+        .arg("cards")
+        .arg("image-reject")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--item")
+        .arg(&item_id)
+        .arg("--reason")
+        .arg("la imagen muestra una pizarra digital, no la palabra 'whiteboard' en general")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success();
+
+    let cards = learnkit_cards::card::load_all(session_paths.root()).unwrap();
+    let card = cards.iter().find(|c| c.id == card_id).unwrap();
+    let front_asset = card.front.blocks.iter().find_map(|b| match b {
+        Block::Image { asset_id } => asset_id.clone(),
+        _ => None,
+    });
+    assert_eq!(front_asset, None);
+
+    // The underlying Asset file itself must still exist — reject only
+    // un-points the card, it never deletes the asset (other cards might
+    // still reference it via register_or_reuse's dedup).
+    assert!(learnkit_media::asset::load(&session_paths.assets(), &wikimedia_asset_id)
+        .unwrap()
+        .is_some());
+
+    // A durable trace of the rejection, with its reason, must exist under
+    // the session's validation dir.
+    let rejected_dir = session_paths.validation().join("rejected-images");
+    let entries: Vec<_> = std::fs::read_dir(&rejected_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(entries.len(), 1);
+    let raw = std::fs::read_to_string(&entries[0]).unwrap();
+    let record: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(record["learning_item_id"], item_id);
+    assert_eq!(record["card_id"], card_id);
+    assert_eq!(record["asset_id"], wikimedia_asset_id);
+    assert_eq!(
+        record["reason"],
+        "la imagen muestra una pizarra digital, no la palabra 'whiteboard' en general"
+    );
+}
+
+#[test]
+fn image_reject_fails_explicitly_when_nothing_to_reject() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, item_id) = session_with_vocabulary_item(dir.path());
+    let session_paths = SessionPaths::new(dir.path(), &session_id);
+
+    // A pending_image card: front image block exists but has no asset yet.
+    learnkit_cards::card::save(session_paths.root(), &pending_image_card(&item_id)).unwrap();
+
+    learnkit()
+        .arg("cards")
+        .arg("image-reject")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--item")
+        .arg(&item_id)
+        .arg("--reason")
+        .arg("nada que rechazar")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn image_reject_fails_explicitly_when_no_card_for_the_item() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, _item_id) = session_with_vocabulary_item(dir.path());
+
+    learnkit()
+        .arg("cards")
+        .arg("image-reject")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--item")
+        .arg("li-does-not-exist")
+        .arg("--reason")
+        .arg("no aplica")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .failure();
+}

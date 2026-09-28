@@ -1,4 +1,4 @@
-use crate::commands::cards_image::{self, ImageBatchArgs, ImageGridArgs};
+use crate::commands::cards_image::{self, ImageBatchArgs, ImageGridArgs, ImageRejectArgs, ImageReviewArgs};
 use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
 use learnkit_cards::card::{
@@ -30,6 +30,8 @@ enum CardsAction {
     Validate(ValidateArgs),
     ImageBatch(ImageBatchArgs),
     ImageGrid(ImageGridArgs),
+    ImageReview(ImageReviewArgs),
+    ImageReject(ImageRejectArgs),
 }
 
 #[derive(Args)]
@@ -96,6 +98,8 @@ pub fn run(args: CardsArgs) -> i32 {
         CardsAction::Validate(a) => run_validate(a),
         CardsAction::ImageBatch(a) => cards_image::run_image_batch(a),
         CardsAction::ImageGrid(a) => cards_image::run_image_grid(a),
+        CardsAction::ImageReview(a) => cards_image::run_image_review(a),
+        CardsAction::ImageReject(a) => cards_image::run_image_reject(a),
     }
 }
 
