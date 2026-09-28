@@ -78,7 +78,9 @@ mod tests {
         let second = install_agent(dir.path(), "claude").unwrap();
 
         assert!(!second.is_blocked());
-        assert_eq!(second.installed_files.len(), 3);
+        // CLAUDE.md + learnkit-session + learnkit-language + learnkit-analyse
+        // (feature 003 added the last one, see `templates.rs`).
+        assert_eq!(second.installed_files.len(), 4);
     }
 
     #[test]

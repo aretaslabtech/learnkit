@@ -29,6 +29,8 @@ enum Command {
     Transcribe(commands::transcribe::TranscribeArgs),
     /// Persist confirmed learning content (vocabulary, ...).
     Learn(commands::learn::LearnArgs),
+    /// Confirm `analyse` checklist elements (summary/mindmap/concept pages).
+    Analyse(commands::analyse::AnalyseArgs),
     /// Build or validate study cards from vocabulary learning items.
     Cards(commands::cards::CardsArgs),
     /// Export session artifacts to external formats (Anki, exam HTML, ...).
@@ -57,6 +59,7 @@ fn main() {
         Command::Inventory(args) => commands::inventory::run_inventory(args),
         Command::Transcribe(args) => commands::transcribe::run(args),
         Command::Learn(args) => commands::learn::run(args),
+        Command::Analyse(args) => commands::analyse::run(args),
         Command::Cards(args) => commands::cards::run(args),
         Command::Export(args) => commands::export::run(args),
         Command::Assessment(args) => commands::assessment::run(args),

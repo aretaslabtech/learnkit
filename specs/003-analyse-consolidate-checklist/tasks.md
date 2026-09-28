@@ -87,19 +87,19 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 ### Tests for User Story 2
 
-- [ ] T012 [P] [US2] Test de integración: `analyse summary set` confirma el elemento `summary`, que pasa a `done` con su fingerprint de fuentes (FR-005) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T013 [P] [US2] Test de integración: `analyse mindmap set` confirma el elemento `mindmap`; si su contenido es idéntico byte a byte al resumen, el comando falla explícitamente (Acceptance Scenario 2 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T014 [P] [US2] Test de integración: `analyse page add` crea un elemento `page-<n>` independiente cada vez que se llama, y pueden confirmarse en cualquier orden entre sí y respecto a `summary`/`mindmap` (Edge Case de spec.md) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T015 [P] [US2] Test de integración: usando el fixture de T001 (hueco deliberado), `analyse summary set --filled-gap "<concepto>:<nota>"` persiste ese relleno marcado como añadido por el sistema, distinguible del resto del contenido (FR-006, Acceptance Scenario 3 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T016 [P] [US2] Test de integración: repetir `analyse summary set` sin cambios en las fuentes es un no-op (no regenera); `--force` sí lo hace (FR-009, Acceptance Scenario 4 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T012 [P] [US2] Test de integración: `analyse summary set` confirma el elemento `summary`, que pasa a `done` con su fingerprint de fuentes (FR-005) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T013 [P] [US2] Test de integración: `analyse mindmap set` confirma el elemento `mindmap`; si su contenido es idéntico byte a byte al resumen, el comando falla explícitamente (Acceptance Scenario 2 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T014 [P] [US2] Test de integración: `analyse page add` crea un elemento `page-<n>` independiente cada vez que se llama, y pueden confirmarse en cualquier orden entre sí y respecto a `summary`/`mindmap` (Edge Case de spec.md) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T015 [P] [US2] Test de integración: usando el fixture de T001 (hueco deliberado), `analyse summary set --filled-gap "<concepto>:<nota>"` persiste ese relleno marcado como añadido por el sistema, distinguible del resto del contenido (FR-006, Acceptance Scenario 3 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T016 [P] [US2] Test de integración: repetir `analyse summary set` sin cambios en las fuentes es un no-op (no regenera); `--force` sí lo hace (FR-009, Acceptance Scenario 4 de US2) en `crates/learnkit-cli/tests/analyse_test.rs`.
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] Implementar `ClassSummary`/`StudyMap`/`ConceptPage` (lectura/escritura en `sessions/<id>/analysis/`, ya reservado en `session_paths.rs`) en `crates/learnkit-workflow/src/analysis.rs`, según `data-model.md` (depende de T004).
-- [ ] T018 [US2] Implementar el handler CLI `analyse summary set` (validación de fichero no vacío, `--filled-gap`, idempotencia/`--force`) en `crates/learnkit-cli/src/commands/analyse.rs` (nuevo) (depende de T017).
-- [ ] T019 [US2] Implementar el handler CLI `analyse mindmap set` (misma validación + comprobación de no-repetición respecto al resumen) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T017).
-- [ ] T020 [US2] Implementar el handler CLI `analyse page add` en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T017).
-- [ ] T021 [US2] Crear la Skill de agente genérica `learnkit-analyse` (`SKILL.md`, sin instrucciones específicas de idiomas: lee `session show --json` y `status --json`, redacta resumen/mapa/páginas, confirma vía los comandos de T018-T020, usa `flag-pending` cuando el material no basta) en `crates/learnkit-agent/templates/skills/learnkit-analyse/SKILL.md`, registrada en `crates/learnkit-agent/src/templates.rs` (mismo mecanismo que `learnkit-language`), según `contracts/agent-skill.md` (depende de T018, T019, T020).
+- [X] T017 [US2] Implementar `ClassSummary`/`StudyMap`/`ConceptPage` (lectura/escritura en `sessions/<id>/analysis/`, ya reservado en `session_paths.rs`) en `crates/learnkit-workflow/src/analysis.rs`, según `data-model.md` (depende de T004).
+- [X] T018 [US2] Implementar el handler CLI `analyse summary set` (validación de fichero no vacío, `--filled-gap`, idempotencia/`--force`) en `crates/learnkit-cli/src/commands/analyse.rs` (nuevo) (depende de T017).
+- [X] T019 [US2] Implementar el handler CLI `analyse mindmap set` (misma validación + comprobación de no-repetición respecto al resumen) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T017).
+- [X] T020 [US2] Implementar el handler CLI `analyse page add` en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T017).
+- [X] T021 [US2] Crear la Skill de agente genérica `learnkit-analyse` (`SKILL.md`, sin instrucciones específicas de idiomas: lee `session show --json` y `status --json`, redacta resumen/mapa/páginas, confirma vía los comandos de T018-T020, usa `flag-pending` cuando el material no basta) en `crates/learnkit-agent/templates/skills/learnkit-analyse/SKILL.md`, registrada en `crates/learnkit-agent/src/templates.rs` (mismo mecanismo que `learnkit-language`), según `contracts/agent-skill.md` (depende de T018, T019, T020).
 
 **Checkpoint**: User Stories 1 y 2 funcionan de forma independiente — `analyse` produce contenido real y visible.
 

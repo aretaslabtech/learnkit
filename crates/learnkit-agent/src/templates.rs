@@ -11,6 +11,7 @@ const CODEX_AGENTS_MD: &str = include_str!("../templates/AGENTS.md");
 const CLAUDE_MD: &str = include_str!("../templates/CLAUDE.md");
 const SESSION_SKILL_MD: &str = include_str!("../templates/skills/learnkit-session/SKILL.md");
 const LANGUAGE_SKILL_MD: &str = include_str!("../templates/skills/learnkit-language/SKILL.md");
+const ANALYSE_SKILL_MD: &str = include_str!("../templates/skills/learnkit-analyse/SKILL.md");
 
 /// Returns the file templates that make up `agent_id`'s integration.
 ///
@@ -32,6 +33,10 @@ pub fn templates_for(agent_id: &str) -> Vec<AgentFileTemplate> {
                 relative_path: ".agents/skills/learnkit-language/SKILL.md",
                 content: LANGUAGE_SKILL_MD,
             },
+            AgentFileTemplate {
+                relative_path: ".agents/skills/learnkit-analyse/SKILL.md",
+                content: ANALYSE_SKILL_MD,
+            },
         ],
         "claude" => vec![
             AgentFileTemplate {
@@ -45,6 +50,10 @@ pub fn templates_for(agent_id: &str) -> Vec<AgentFileTemplate> {
             AgentFileTemplate {
                 relative_path: ".claude/skills/learnkit-language/SKILL.md",
                 content: LANGUAGE_SKILL_MD,
+            },
+            AgentFileTemplate {
+                relative_path: ".claude/skills/learnkit-analyse/SKILL.md",
+                content: ANALYSE_SKILL_MD,
             },
         ],
         other => panic!("templates_for called with unsupported agent_id: {other}"),

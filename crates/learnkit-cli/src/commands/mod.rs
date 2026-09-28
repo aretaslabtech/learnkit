@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod analyse;
 pub mod assessment;
 pub mod attempt;
 pub mod cards;
