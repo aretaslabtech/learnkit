@@ -36,8 +36,15 @@ pub struct StudyMap {
     pub session_id: String,
     pub content: String,
     pub source_fingerprint: String,
+    /// Generalized from `ClassSummary` (FR-018, feature 003 Phase 10):
+    /// `analyse set --item mindmap` accepts `--filled-gap` too now.
+    #[serde(default)]
+    pub filled_gaps: Vec<FilledGap>,
 }
 
+/// A concept page's stable, agent-facing identity is `id` (e.g.
+/// `"page:layover"`) — never positional, never derived from `concept` (the
+/// editable display name) or from filesystem/persistence order (FR-018).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConceptPage {
     pub id: String,
@@ -45,6 +52,16 @@ pub struct ConceptPage {
     pub concept: String,
     pub content: String,
     pub source_fingerprint: String,
+    /// Generalized from `ClassSummary` (FR-018).
+    #[serde(default)]
+    pub filled_gaps: Vec<FilledGap>,
+    /// Explicit creation/persistence order (FR-018) — consumers that need a
+    /// stable rendering order (e.g. `export study-guide`) sort by this field
+    /// instead of parsing `id`, which is now an arbitrary agent-chosen slug,
+    /// not a sequence number. Assigned once, at creation, and never changed
+    /// by a later `analyse set` update to the same page.
+    #[serde(default)]
+    pub order: u64,
 }
 
 fn analysis_dir(project_root: &Path, session_id: &str) -> PathBuf {
@@ -63,8 +80,17 @@ fn pages_dir(project_root: &Path, session_id: &str) -> PathBuf {
     analysis_dir(project_root, session_id).join("pages")
 }
 
+/// A `ConceptPage`'s logical `id` (e.g. `"page:layover"`) can contain `:`,
+/// which is not a legal character in a Windows filename. The on-disk
+/// filename is a separate, sanitized encoding — the real `id` string is
+/// always the one stored inside the YAML (and used everywhere in the
+/// CLI/checklist), never reconstructed from the filename.
+fn sanitize_filename_component(id: &str) -> String {
+    id.replace(':', "_")
+}
+
 fn page_path(project_root: &Path, session_id: &str, id: &str) -> PathBuf {
-    pages_dir(project_root, session_id).join(format!("{id}.yaml"))
+    pages_dir(project_root, session_id).join(format!("{}.yaml", sanitize_filename_component(id)))
 }
 
 fn to_io_err(err: serde_yaml::Error) -> std::io::Error {
@@ -107,7 +133,9 @@ pub fn read_study_map(project_root: &Path, session_id: &str) -> std::io::Result<
 }
 
 /// Lists every `ConceptPage` already persisted for this session, sorted by
-/// `id` (`page-1`, `page-2`, ...).
+/// its explicit creation/persistence `order` (FR-018) — never by parsing
+/// `id`, which since Phase 10 is an arbitrary agent-chosen stable slug
+/// (`page:layover`), not a sequence number.
 pub fn list_concept_pages(
     project_root: &Path,
     session_id: &str,
@@ -126,7 +154,7 @@ pub fn list_concept_pages(
         let page: ConceptPage = serde_yaml::from_str(&raw).map_err(to_io_err)?;
         pages.push(page);
     }
-    pages.sort_by_key(|p| page_number(&p.id));
+    pages.sort_by_key(|p| p.order);
     Ok(pages)
 }
 
@@ -144,38 +172,41 @@ pub fn read_concept_page(
     Ok(Some(page))
 }
 
-fn page_number(id: &str) -> u32 {
-    id.strip_prefix("page-")
-        .and_then(|n| n.parse::<u32>().ok())
-        .unwrap_or(0)
-}
-
-/// Assigns the next sequential `page-<n>` id for this session and persists a
-/// brand new `ConceptPage` — never overwrites an existing one. Each call
-/// creates an independent checklist element (Edge Case of `spec.md`: pages
-/// can be confirmed in any order, relative to each other and to
-/// `summary`/`mindmap`).
-pub fn add_concept_page(
+/// Creates or updates the `ConceptPage` identified by `id` (e.g.
+/// `"page:layover"`, stable across updates — FR-018): assigns the next
+/// `order` value (see `ConceptPage::order`) on first creation, and reuses
+/// the existing `order` on every later update to the same `id` — the same
+/// page is updated in place, never a new `page:<id>-2`. `concept` must
+/// already be resolved by the caller (`analyse set` requires `--concept` on
+/// first creation and falls back to the existing display name otherwise —
+/// `data-model.md`/FR-018 leave that decision to the CLI layer, not this
+/// storage function).
+pub fn upsert_concept_page(
     project_root: &Path,
     session_id: &str,
+    id: &str,
     concept: &str,
     content: &str,
     source_fingerprint: &str,
+    filled_gaps: Vec<FilledGap>,
 ) -> std::io::Result<ConceptPage> {
-    let existing = list_concept_pages(project_root, session_id)?;
-    let next_n = existing
-        .iter()
-        .map(|p| page_number(&p.id))
-        .max()
-        .unwrap_or(0)
-        + 1;
+    let existing = read_concept_page(project_root, session_id, id)?;
+    let order = match &existing {
+        Some(p) => p.order,
+        None => {
+            let pages = list_concept_pages(project_root, session_id)?;
+            pages.iter().map(|p| p.order).max().unwrap_or(0) + 1
+        }
+    };
 
     let page = ConceptPage {
-        id: format!("page-{next_n}"),
+        id: id.to_string(),
         session_id: session_id.to_string(),
         concept: concept.to_string(),
         content: content.to_string(),
         source_fingerprint: source_fingerprint.to_string(),
+        filled_gaps,
+        order,
     };
 
     let path = page_path(project_root, session_id, &page.id);
@@ -218,6 +249,7 @@ mod tests {
             session_id: session.id.clone(),
             content: "- nodo 1\n  - nodo 1.1".to_string(),
             source_fingerprint: "fp1".to_string(),
+            filled_gaps: Vec::new(),
         };
         write_study_map(dir.path(), &map).unwrap();
 
@@ -234,22 +266,100 @@ mod tests {
         assert_eq!(read_study_map(dir.path(), &session.id).unwrap(), None);
     }
 
+    // --- FR-018 (Phase 10): stable `page:<id>` identity, not positional ---
+
     #[test]
-    fn concept_pages_get_sequential_stable_ids() {
+    fn concept_pages_get_stable_agent_chosen_ids_in_creation_order() {
         let dir = tempfile::tempdir().unwrap();
         let session = create_session(dir.path(), "Unit 5", "language-en").unwrap();
 
-        let page1 =
-            add_concept_page(dir.path(), &session.id, "concepto A", "contenido A", "fp1").unwrap();
-        let page2 =
-            add_concept_page(dir.path(), &session.id, "concepto B", "contenido B", "fp1").unwrap();
+        let page1 = upsert_concept_page(
+            dir.path(),
+            &session.id,
+            "page:layover",
+            "Layover",
+            "contenido A",
+            "fp1",
+            Vec::new(),
+        )
+        .unwrap();
+        let page2 = upsert_concept_page(
+            dir.path(),
+            &session.id,
+            "page:present-perfect",
+            "Present perfect",
+            "contenido B",
+            "fp1",
+            Vec::new(),
+        )
+        .unwrap();
 
-        assert_eq!(page1.id, "page-1");
-        assert_eq!(page2.id, "page-2");
+        assert_eq!(page1.id, "page:layover");
+        assert_eq!(page2.id, "page:present-perfect");
+        assert!(page1.order < page2.order);
 
         let pages = list_concept_pages(dir.path(), &session.id).unwrap();
         assert_eq!(pages.len(), 2);
-        assert_eq!(pages[0].id, "page-1");
-        assert_eq!(pages[1].id, "page-2");
+        // list_concept_pages sorts by creation order, not by id.
+        assert_eq!(pages[0].id, "page:layover");
+        assert_eq!(pages[1].id, "page:present-perfect");
+    }
+
+    #[test]
+    fn upserting_an_existing_page_id_updates_it_in_place_without_creating_another() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = create_session(dir.path(), "Unit 5", "language-en").unwrap();
+
+        let created = upsert_concept_page(
+            dir.path(),
+            &session.id,
+            "page:layover",
+            "Layover",
+            "contenido v1",
+            "fp1",
+            Vec::new(),
+        )
+        .unwrap();
+        let updated = upsert_concept_page(
+            dir.path(),
+            &session.id,
+            "page:layover",
+            "Layovers and connections",
+            "contenido v2",
+            "fp2",
+            Vec::new(),
+        )
+        .unwrap();
+
+        // Same identity, same creation order — content/concept/fingerprint change.
+        assert_eq!(created.id, updated.id);
+        assert_eq!(created.order, updated.order);
+        assert_eq!(updated.concept, "Layovers and connections");
+        assert_eq!(updated.content, "contenido v2");
+
+        let pages = list_concept_pages(dir.path(), &session.id).unwrap();
+        assert_eq!(pages.len(), 1, "update must not create a second page");
+    }
+
+    #[test]
+    fn page_id_containing_colon_round_trips_despite_windows_filename_restriction() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = create_session(dir.path(), "Unit 5", "language-en").unwrap();
+
+        upsert_concept_page(
+            dir.path(),
+            &session.id,
+            "page:layover",
+            "Layover",
+            "contenido",
+            "fp1",
+            Vec::new(),
+        )
+        .unwrap();
+
+        let read_back = read_concept_page(dir.path(), &session.id, "page:layover")
+            .unwrap()
+            .expect("page readable by its real, colon-containing id");
+        assert_eq!(read_back.id, "page:layover");
     }
 }

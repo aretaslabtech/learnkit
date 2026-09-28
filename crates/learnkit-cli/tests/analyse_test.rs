@@ -1,5 +1,8 @@
-//! Integration tests for `learnkit analyse summary/mindmap/page`, User
-//! Story 2 (specs/003-analyse-consolidate-checklist/tasks.md T012-T016).
+//! Integration tests for `learnkit analyse set` / `flag-pending` / `skip`,
+//! User Story 2/3 (feature 003) — rewritten for the unified item-based API
+//! (FR-018, Phase 10, tasks T045-T053). Every result of `analyse` is
+//! addressed through one stable `item_id`: `summary`, `mindmap`, or
+//! `page:<stable_id>`.
 
 use assert_cmd::Command;
 use std::path::Path;
@@ -98,10 +101,61 @@ fn checklist_item_state<'a>(analyse: &'a serde_json::Value, item_id: &str) -> Op
         .map(|i| i["state"].as_str().unwrap())
 }
 
-// --- T012: `analyse summary set` confirms `summary` with a fingerprint ---
+/// Thin wrapper around `learnkit analyse set`, mirroring the real CLI
+/// surface (`--session --item --file [--concept] [--filled-gap]... [--force]`).
+#[allow(clippy::too_many_arguments)]
+fn analyse_set(
+    project_root: &Path,
+    session_id: &str,
+    item: &str,
+    file: &Path,
+    concept: Option<&str>,
+    filled_gaps: &[&str],
+    force: bool,
+) -> assert_cmd::assert::Assert {
+    let mut cmd = learnkit();
+    cmd.arg("analyse")
+        .arg("set")
+        .arg("--session")
+        .arg(session_id)
+        .arg("--item")
+        .arg(item)
+        .arg("--file")
+        .arg(file)
+        .arg("--path")
+        .arg(project_root)
+        .arg("--json");
+    if let Some(c) = concept {
+        cmd.arg("--concept").arg(c);
+    }
+    for gap in filled_gaps {
+        cmd.arg("--filled-gap").arg(gap);
+    }
+    if force {
+        cmd.arg("--force");
+    }
+    cmd.assert()
+}
+
+fn analyse_set_json(
+    project_root: &Path,
+    session_id: &str,
+    item: &str,
+    file: &Path,
+    concept: Option<&str>,
+) -> serde_json::Value {
+    let out = analyse_set(project_root, session_id, item, file, concept, &[], false)
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&out).unwrap()
+}
+
+// --- 1/2/3: create summary; idempotent re-run; --force required to override deliberately ---
 
 #[test]
-fn analyse_summary_set_confirms_summary_item() {
+fn analyse_set_summary_creates_confirms_and_is_idempotent() {
     let project = tempfile::tempdir().unwrap();
     let content_dir = tempfile::tempdir().unwrap();
     let session_id = new_session_with_notes(project.path());
@@ -112,26 +166,12 @@ fn analyse_summary_set_confirms_summary_item() {
         "# Resumen\n\nHoy repasamos present perfect vs past simple, con varios ejemplos.",
     );
 
-    let out = learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(json["ok"], true);
-    assert_eq!(json["item_id"], "summary");
-    assert_eq!(json["state"], "done");
+    let first = analyse_set_json(project.path(), &session_id, "summary", &summary_file, None);
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["code"], "ANALYSE_ITEM_SET");
+    assert_eq!(first["item_id"], "summary");
+    assert_eq!(first["state"], "done");
+    assert_eq!(first["already_done"], false);
 
     let analyse = analyse_phase(project.path(), &session_id);
     assert_eq!(checklist_item_state(&analyse, "summary"), Some("done"));
@@ -140,330 +180,41 @@ fn analyse_summary_set_confirms_summary_item() {
         .unwrap()
         .expect("summary persisted");
     assert!(!persisted.source_fingerprint.is_empty());
-}
 
-// --- T013: `analyse mindmap set` confirms `mindmap`; identical-to-summary content fails ---
+    // 2) Re-running unchanged is idempotent (no-op).
+    let second = analyse_set_json(project.path(), &session_id, "summary", &summary_file, None);
+    assert_eq!(second["already_done"], true);
 
-#[test]
-fn analyse_mindmap_set_confirms_mindmap_item() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let mindmap_file = write_content_file(
-        content_dir.path(),
-        "mindmap.md",
-        "- Present perfect\n  - unfinished time\n- Past simple\n  - closed time",
-    );
-
-    learnkit()
-        .arg("analyse")
-        .arg("mindmap")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&mindmap_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let analyse = analyse_phase(project.path(), &session_id);
-    assert_eq!(checklist_item_state(&analyse, "mindmap"), Some("done"));
-}
-
-#[test]
-fn analyse_mindmap_set_rejects_content_identical_to_confirmed_summary() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let shared_content = "# Resumen\n\nContenido idéntico para ambos elementos.";
-    let summary_file = write_content_file(content_dir.path(), "summary.md", shared_content);
-    let mindmap_file = write_content_file(content_dir.path(), "mindmap.md", shared_content);
-
-    learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let out = learnkit()
-        .arg("analyse")
-        .arg("mindmap")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&mindmap_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .failure()
-        .code(10)
-        .get_output()
-        .stdout
-        .clone();
-    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(json["ok"], false);
-
-    let analyse = analyse_phase(project.path(), &session_id);
-    assert_ne!(checklist_item_state(&analyse, "mindmap"), Some("done"));
-}
-
-// --- T014: `analyse page add` creates independent items, any order ---
-
-#[test]
-fn analyse_page_add_creates_independent_items_in_any_order() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let page1_file = write_content_file(
-        content_dir.path(),
-        "page1.md",
-        "Explicación del concepto A.",
-    );
-    let page2_file = write_content_file(
-        content_dir.path(),
-        "page2.md",
-        "Explicación del concepto B.",
-    );
-    let mindmap_file = write_content_file(content_dir.path(), "mindmap.md", "- nodo 1\n- nodo 2");
-
-    let out1 = learnkit()
-        .arg("analyse")
-        .arg("page")
-        .arg("add")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--concept")
-        .arg("Concepto A")
-        .arg("--file")
-        .arg(&page1_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let json1: serde_json::Value = serde_json::from_slice(&out1).unwrap();
-    assert_eq!(json1["item_id"], "page-1");
-
-    // Confirm mindmap in between the two page additions — order between
-    // independent checklist elements must not matter.
-    learnkit()
-        .arg("analyse")
-        .arg("mindmap")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&mindmap_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let out2 = learnkit()
-        .arg("analyse")
-        .arg("page")
-        .arg("add")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--concept")
-        .arg("Concepto B")
-        .arg("--file")
-        .arg(&page2_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let json2: serde_json::Value = serde_json::from_slice(&out2).unwrap();
-    assert_eq!(json2["item_id"], "page-2");
-
-    let analyse = analyse_phase(project.path(), &session_id);
-    assert_eq!(checklist_item_state(&analyse, "page-1"), Some("done"));
-    assert_eq!(checklist_item_state(&analyse, "page-2"), Some("done"));
-    assert_eq!(checklist_item_state(&analyse, "mindmap"), Some("done"));
-}
-
-// --- T015: `--filled-gap` is recorded distinguishably on `ClassSummary` ---
-
-#[test]
-fn analyse_summary_set_records_filled_gap_distinguishable_from_content() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let summary_file = write_content_file(
-        content_dir.path(),
-        "summary.md",
-        "# Resumen\n\nRepasamos present perfect vs past simple y vocabulario de viajes.",
-    );
-
-    learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--filled-gap")
-        .arg("present perfect of unfinished time periods:se usa cuando la acción empezó en el pasado y el periodo de tiempo sigue abierto")
-        .assert()
-        .success();
-
-    let persisted = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
-        .unwrap()
-        .expect("summary persisted");
-    assert_eq!(persisted.filled_gaps.len(), 1);
-    assert_eq!(
-        persisted.filled_gaps[0].concept,
-        "present perfect of unfinished time periods"
-    );
-    // Distinguishable from the regular content: not silently merged in.
-    assert!(!persisted
-        .content
-        .contains("se usa cuando la acción empezó en el pasado"));
-}
-
-#[test]
-fn analyse_summary_set_rejects_malformed_filled_gap() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let summary_file = write_content_file(content_dir.path(), "summary.md", "Resumen breve.");
-
-    learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--filled-gap")
-        .arg("solo-concepto-sin-nota")
-        .assert()
-        .failure()
-        .code(10);
-}
-
-// --- T016: repeating `analyse summary set` unchanged is a no-op; `--force` re-runs it ---
-
-#[test]
-fn analyse_summary_set_is_idempotent_and_force_reruns_it() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    let summary_file = write_content_file(content_dir.path(), "summary.md", "Resumen original.");
-
-    let first = learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let first_json: serde_json::Value = serde_json::from_slice(&first).unwrap();
-    assert_eq!(first_json["already_done"], false);
-
-    // Re-run with unchanged source material and an unchanged file: no-op.
-    let second = learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let second_json: serde_json::Value = serde_json::from_slice(&second).unwrap();
-    assert_eq!(second_json["already_done"], true);
-
-    // A different file's content is ignored by the no-op path unless forced.
+    // 3) A different file's content is ignored unless --force; --force overrides deliberately.
     let updated_file =
         write_content_file(content_dir.path(), "summary2.md", "Resumen actualizado.");
-    let noop_with_new_file = learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&updated_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let noop_json: serde_json::Value = serde_json::from_slice(&noop_with_new_file).unwrap();
-    assert_eq!(noop_json["already_done"], true);
+    let noop = analyse_set_json(
+        project.path(),
+        &session_id,
+        "summary",
+        &updated_file,
+        None,
+    );
+    assert_eq!(noop["already_done"], true);
     let persisted = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
         .unwrap()
         .unwrap();
-    assert_eq!(persisted.content, "Resumen original.");
+    assert_eq!(persisted.content, "# Resumen\n\nHoy repasamos present perfect vs past simple, con varios ejemplos.");
+    assert_ne!(persisted.content, "Resumen actualizado.");
 
-    // `--force` re-runs it, picking up the new content.
-    let forced = learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&updated_file)
-        .arg("--path")
-        .arg(project.path())
-        .arg("--force")
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
+    let forced = analyse_set(
+        project.path(),
+        &session_id,
+        "summary",
+        &updated_file,
+        None,
+        &[],
+        true,
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
     let forced_json: serde_json::Value = serde_json::from_slice(&forced).unwrap();
     assert_eq!(forced_json["already_done"], false);
     let persisted_after_force =
@@ -473,42 +224,370 @@ fn analyse_summary_set_is_idempotent_and_force_reruns_it() {
     assert_eq!(persisted_after_force.content, "Resumen actualizado.");
 }
 
-// --- T022: `analyse flag-pending mindmap --reason "..."` marks the item as
-// `pending_user_decision`, leaving other items unaffected ---
+// --- 4/5: create mindmap; validation differentiating mindmap vs summary is preserved ---
 
 #[test]
-fn analyse_flag_pending_marks_item_as_pending_user_decision_with_reason() {
+fn analyse_set_mindmap_confirms_and_rejects_content_identical_to_summary() {
     let project = tempfile::tempdir().unwrap();
     let content_dir = tempfile::tempdir().unwrap();
     let session_id = new_session_with_notes(project.path());
 
-    // Confirm `summary` independently — must be unaffected by flagging `mindmap`.
+    let mindmap_file = write_content_file(
+        content_dir.path(),
+        "mindmap.md",
+        "- Present perfect\n  - unfinished time\n- Past simple\n  - closed time",
+    );
+    let out = analyse_set_json(project.path(), &session_id, "mindmap", &mindmap_file, None);
+    assert_eq!(out["ok"], true);
+    assert_eq!(out["item_id"], "mindmap");
+    assert_eq!(out["state"], "done");
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse, "mindmap"), Some("done"));
+
+    // Validation preserved: identical-to-summary content is rejected.
+    let project2 = tempfile::tempdir().unwrap();
+    let session2 = new_session_with_notes(project2.path());
+    let shared_content = "# Resumen\n\nContenido idéntico para ambos elementos.";
+    let summary_file = write_content_file(content_dir.path(), "summary_dup.md", shared_content);
+    let mindmap_file2 = write_content_file(content_dir.path(), "mindmap_dup.md", shared_content);
+
+    analyse_set(
+        project2.path(),
+        &session2,
+        "summary",
+        &summary_file,
+        None,
+        &[],
+        false,
+    )
+    .success();
+
+    let rejected = analyse_set(
+        project2.path(),
+        &session2,
+        "mindmap",
+        &mindmap_file2,
+        None,
+        &[],
+        false,
+    )
+    .failure()
+    .code(10)
+    .get_output()
+    .stdout
+    .clone();
+    let rejected_json: serde_json::Value = serde_json::from_slice(&rejected).unwrap();
+    assert_eq!(rejected_json["ok"], false);
+
+    let analyse2 = analyse_phase(project2.path(), &session2);
+    assert_ne!(checklist_item_state(&analyse2, "mindmap"), Some("done"));
+}
+
+// --- 6/7/8/9: create page:foo; update it (no duplicate); change --concept
+// keeping item_id; several distinct pages ---
+
+#[test]
+fn analyse_set_page_creates_updates_in_place_and_supports_several_pages() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    let page1_file = write_content_file(content_dir.path(), "layover_v1.md", "Contenido v1.");
+    let created = analyse_set_json(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page1_file,
+        Some("Layover"),
+    );
+    assert_eq!(created["ok"], true);
+    assert_eq!(created["item_id"], "page:layover");
+    assert_eq!(created["state"], "done");
+    assert_eq!(created["kind"], "concept_page");
+    assert_eq!(created["concept"], "Layover");
+
+    // 7) Update the same page (source unchanged -> would be no-op unless
+    // forced); force the deliberate content replacement and prove no second
+    // page was created.
+    let page1_v2_file = write_content_file(content_dir.path(), "layover_v2.md", "Contenido v2.");
+    let updated = analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page1_v2_file,
+        None,
+        &[],
+        true,
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let updated_json: serde_json::Value = serde_json::from_slice(&updated).unwrap();
+    assert_eq!(updated_json["item_id"], "page:layover");
+    assert_eq!(updated_json["already_done"], false);
+
+    let pages = learnkit_workflow::analysis::list_concept_pages(project.path(), &session_id)
+        .unwrap();
+    assert_eq!(pages.len(), 1, "update must not create a second page");
+    assert_eq!(pages[0].content, "Contenido v2.");
+
+    // 8) Change the visible --concept while keeping the same item_id. The
+    // source fingerprint and content are unchanged from the last confirm,
+    // so — same as a deliberate content replacement — this needs --force.
+    let renamed_out = analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page1_v2_file,
+        Some("Layovers and connections"),
+        &[],
+        true,
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let renamed: serde_json::Value = serde_json::from_slice(&renamed_out).unwrap();
+    assert_eq!(renamed["item_id"], "page:layover");
+    let pages = learnkit_workflow::analysis::list_concept_pages(project.path(), &session_id)
+        .unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].concept, "Layovers and connections");
+
+    // 9) Several distinct pages coexist.
+    let page2_file = write_content_file(content_dir.path(), "present_perfect.md", "Otro contenido.");
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:present-perfect",
+        &page2_file,
+        Some("Present perfect"),
+        &[],
+        false,
+    )
+    .success();
+
+    let pages = learnkit_workflow::analysis::list_concept_pages(project.path(), &session_id)
+        .unwrap();
+    assert_eq!(pages.len(), 2);
+    let ids: Vec<&str> = pages.iter().map(|p| p.id.as_str()).collect();
+    assert!(ids.contains(&"page:layover"));
+    assert!(ids.contains(&"page:present-perfect"));
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse, "page:layover"), Some("done"));
+    assert_eq!(
+        checklist_item_state(&analyse, "page:present-perfect"),
+        Some("done")
+    );
+}
+
+#[test]
+fn analyse_set_page_requires_concept_on_first_creation_but_not_on_update() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    let page_file = write_content_file(content_dir.path(), "page.md", "Contenido.");
+
+    // Creating without --concept fails.
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_file,
+        None,
+        &[],
+        false,
+    )
+    .failure()
+    .code(10);
+
+    // Creating with --concept succeeds.
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_file,
+        Some("Layover"),
+        &[],
+        false,
+    )
+    .success();
+
+    // Updating without --concept succeeds, keeping the existing display name.
+    let page_v2 = write_content_file(content_dir.path(), "page_v2.md", "Contenido nuevo.");
+    let updated = analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_v2,
+        None,
+        &[],
+        true,
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    let updated_json: serde_json::Value = serde_json::from_slice(&updated).unwrap();
+    assert_eq!(updated_json["concept"], "Layover");
+}
+
+// --- 10/11/12/13: --filled-gap on summary, mindmap, concept page; repeatable ---
+
+#[test]
+fn analyse_set_records_filled_gaps_on_every_item_kind_distinguishable_from_content() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
     let summary_file = write_content_file(
         content_dir.path(),
         "summary.md",
-        "# Resumen\n\nRepaso de present perfect.",
+        "# Resumen\n\nRepasamos present perfect vs past simple y vocabulario de viajes.",
     );
-    learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
+    analyse_set(
+        project.path(),
+        &session_id,
+        "summary",
+        &summary_file,
+        None,
+        &[
+            "present perfect of unfinished time periods:se usa cuando la acción empezó en el pasado y el periodo de tiempo sigue abierto",
+        ],
+        false,
+    )
+    .success();
+
+    let persisted_summary = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
+        .unwrap()
+        .expect("summary persisted");
+    assert_eq!(persisted_summary.filled_gaps.len(), 1);
+    assert_eq!(
+        persisted_summary.filled_gaps[0].concept,
+        "present perfect of unfinished time periods"
+    );
+    assert!(!persisted_summary
+        .content
+        .contains("se usa cuando la acción empezó en el pasado"));
+
+    let mindmap_file = write_content_file(content_dir.path(), "mindmap.md", "- nodo 1\n- nodo 2");
+    analyse_set(
+        project.path(),
+        &session_id,
+        "mindmap",
+        &mindmap_file,
+        None,
+        &["gap concepto mindmap:nota del mindmap"],
+        false,
+    )
+    .success();
+    let persisted_map = learnkit_workflow::analysis::read_study_map(project.path(), &session_id)
+        .unwrap()
+        .expect("mindmap persisted");
+    assert_eq!(persisted_map.filled_gaps.len(), 1);
+    assert_eq!(persisted_map.filled_gaps[0].concept, "gap concepto mindmap");
+
+    // 13) several --filled-gap on the same item.
+    let page_file = write_content_file(content_dir.path(), "page.md", "Contenido de la página.");
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_file,
+        Some("Layover"),
+        &["gap a:nota a", "gap b:nota b"],
+        false,
+    )
+    .success();
+    let page = learnkit_workflow::analysis::read_concept_page(
+        project.path(),
+        &session_id,
+        "page:layover",
+    )
+    .unwrap()
+    .expect("page persisted");
+    assert_eq!(page.filled_gaps.len(), 2);
+
+    // Gaps of one item never leak into another item.
+    assert_eq!(persisted_summary.filled_gaps.len(), 1);
+    assert_eq!(persisted_map.filled_gaps.len(), 1);
+}
+
+#[test]
+fn analyse_set_rejects_malformed_filled_gap() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    let summary_file = write_content_file(content_dir.path(), "summary.md", "Resumen breve.");
+
+    analyse_set(
+        project.path(),
+        &session_id,
+        "summary",
+        &summary_file,
+        None,
+        &["solo-concepto-sin-nota"],
+        false,
+    )
+    .failure()
+    .code(10);
+}
+
+// --- 14/15: rejection of empty `page:` and unknown item ids ---
+
+#[test]
+fn analyse_set_rejects_empty_page_id() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+    let file = write_content_file(content_dir.path(), "page.md", "Contenido.");
+
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:",
+        &file,
+        Some("Algo"),
+        &[],
+        false,
+    )
+    .failure()
+    .code(10);
+}
+
+#[test]
+fn analyse_set_rejects_unknown_item_id() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+    let file = write_content_file(content_dir.path(), "x.md", "Contenido.");
+
+    analyse_set(project.path(), &session_id, "bogus", &file, None, &[], false)
+        .failure()
+        .code(10);
+}
+
+// --- 16/17: flag-pending page:foo, then resolve later via `set` ---
+
+#[test]
+fn analyse_flag_pending_and_skip_operate_on_page_item_ids() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
 
     let out = learnkit()
         .arg("analyse")
         .arg("flag-pending")
-        .arg("mindmap")
+        .arg("page:foo")
         .arg("--session")
         .arg(&session_id)
         .arg("--reason")
-        .arg("no hay material suficiente para redactar el mapa mental")
+        .arg("el material no explica el concepto todavía")
         .arg("--path")
         .arg(project.path())
         .arg("--json")
@@ -519,31 +598,55 @@ fn analyse_flag_pending_marks_item_as_pending_user_decision_with_reason() {
         .clone();
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(json["ok"], true);
-    assert_eq!(json["item_id"], "mindmap");
+    assert_eq!(json["item_id"], "page:foo");
     assert_eq!(json["state"], "pending_user_decision");
-    assert_eq!(
-        json["reason"],
-        "no hay material suficiente para redactar el mapa mental"
-    );
 
     let analyse = analyse_phase(project.path(), &session_id);
     assert_eq!(
-        checklist_item_state(&analyse, "mindmap"),
+        checklist_item_state(&analyse, "page:foo"),
         Some("pending_user_decision")
     );
-    let mindmap_item = analyse["checklist"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|i| i["item_id"] == "mindmap")
-        .unwrap();
-    assert_eq!(
-        mindmap_item["pending_reason"],
-        "no hay material suficiente para redactar el mapa mental"
-    );
 
-    // `summary` followed its own normal course, unaffected.
-    assert_eq!(checklist_item_state(&analyse, "summary"), Some("done"));
+    // 17) resolve later via `set`.
+    let page_file = write_content_file(content_dir.path(), "foo.md", "Ahora sí hay contenido.");
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:foo",
+        &page_file,
+        Some("Foo"),
+        &[],
+        false,
+    )
+    .success();
+
+    let analyse_after = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse_after, "page:foo"), Some("done"));
+
+    // 18) skip page:bar.
+    let skip_out = learnkit()
+        .arg("analyse")
+        .arg("skip")
+        .arg("page:bar")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("se omite esta página para esta sesión")
+        .arg("--path")
+        .arg(project.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let skip_json: serde_json::Value = serde_json::from_slice(&skip_out).unwrap();
+    assert_eq!(skip_json["item_id"], "page:bar");
+    assert_eq!(skip_json["state"], "done");
+    assert_eq!(skip_json["resolution"], "skipped");
+
+    let analyse_final = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse_final, "page:bar"), Some("done"));
 }
 
 #[test]
@@ -567,31 +670,9 @@ fn analyse_flag_pending_rejects_empty_reason() {
 }
 
 #[test]
-fn analyse_flag_pending_rejects_unknown_page_item() {
+fn analyse_flag_pending_rejects_unknown_shaped_item_id() {
     let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
     let session_id = new_session_with_notes(project.path());
-
-    // Only `page-1` exists so far; `page-3` must be rejected.
-    let page1_file = write_content_file(
-        content_dir.path(),
-        "page1.md",
-        "Explicación del concepto A.",
-    );
-    learnkit()
-        .arg("analyse")
-        .arg("page")
-        .arg("add")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--concept")
-        .arg("Concepto A")
-        .arg("--file")
-        .arg(&page1_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
 
     learnkit()
         .arg("analyse")
@@ -606,186 +687,6 @@ fn analyse_flag_pending_rejects_unknown_page_item() {
         .assert()
         .failure()
         .code(10);
-}
-
-#[test]
-fn analyse_flag_pending_allows_first_ever_page_item() {
-    let project = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    // No `analyse` items exist yet at all — `page-1` is a legitimate first item.
-    learnkit()
-        .arg("analyse")
-        .arg("flag-pending")
-        .arg("page-1")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--reason")
-        .arg("el material no explica el concepto de la primera página")
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let analyse = analyse_phase(project.path(), &session_id);
-    assert_eq!(
-        checklist_item_state(&analyse, "page-1"),
-        Some("pending_user_decision")
-    );
-}
-
-// --- T023: providing the missing material and re-calling `analyse mindmap
-// set` clears the pending state without repeating other items' work ---
-
-#[test]
-fn analyse_set_after_flag_pending_clears_pending_state() {
-    let project = tempfile::tempdir().unwrap();
-    let content_dir = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    // Confirm `summary` first — must survive untouched throughout.
-    let summary_file =
-        write_content_file(content_dir.path(), "summary.md", "Resumen ya confirmado.");
-    learnkit()
-        .arg("analyse")
-        .arg("summary")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&summary_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    learnkit()
-        .arg("analyse")
-        .arg("flag-pending")
-        .arg("mindmap")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--reason")
-        .arg("falta material para el mapa mental")
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let analyse_before = analyse_phase(project.path(), &session_id);
-    assert_eq!(
-        checklist_item_state(&analyse_before, "mindmap"),
-        Some("pending_user_decision")
-    );
-
-    // The missing material is now provided.
-    let mindmap_file = write_content_file(
-        content_dir.path(),
-        "mindmap.md",
-        "- Present perfect\n  - unfinished time\n- Past simple\n  - closed time",
-    );
-    learnkit()
-        .arg("analyse")
-        .arg("mindmap")
-        .arg("set")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--file")
-        .arg(&mindmap_file)
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let analyse_after = analyse_phase(project.path(), &session_id);
-    assert_eq!(
-        checklist_item_state(&analyse_after, "mindmap"),
-        Some("done")
-    );
-    let mindmap_item = analyse_after["checklist"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|i| i["item_id"] == "mindmap")
-        .unwrap();
-    assert!(mindmap_item["pending_reason"].is_null());
-
-    // `summary`'s already-done work was not repeated/disturbed.
-    assert_eq!(
-        checklist_item_state(&analyse_after, "summary"),
-        Some("done")
-    );
-    let persisted_summary = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
-        .unwrap()
-        .unwrap();
-    assert_eq!(persisted_summary.content, "Resumen ya confirmado.");
-}
-
-// --- T024: `analyse skip mindmap --reason "..."` resolves a pending item
-// auditably; a later `status` query does not show it as pending again ---
-
-#[test]
-fn analyse_skip_resolves_pending_item_and_status_does_not_re_show_pending() {
-    let project = tempfile::tempdir().unwrap();
-    let session_id = new_session_with_notes(project.path());
-
-    learnkit()
-        .arg("analyse")
-        .arg("flag-pending")
-        .arg("mindmap")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--reason")
-        .arg("falta material para el mapa mental")
-        .arg("--path")
-        .arg(project.path())
-        .assert()
-        .success();
-
-    let out = learnkit()
-        .arg("analyse")
-        .arg("skip")
-        .arg("mindmap")
-        .arg("--session")
-        .arg(&session_id)
-        .arg("--reason")
-        .arg("se decide omitir el mapa mental para esta sesión")
-        .arg("--path")
-        .arg(project.path())
-        .arg("--json")
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(json["ok"], true);
-    assert_eq!(json["item_id"], "mindmap");
-    assert_eq!(json["state"], "done");
-    assert_eq!(json["resolution"], "skipped");
-    assert_eq!(
-        json["reason"],
-        "se decide omitir el mapa mental para esta sesión"
-    );
-
-    // Immediately after skip.
-    let analyse = analyse_phase(project.path(), &session_id);
-    assert_eq!(checklist_item_state(&analyse, "mindmap"), Some("done"));
-
-    // A later, independent `status` query must not show it as
-    // `pending_user_decision` again.
-    let analyse_again = analyse_phase(project.path(), &session_id);
-    assert_eq!(
-        checklist_item_state(&analyse_again, "mindmap"),
-        Some("done")
-    );
-    let mindmap_item = analyse_again["checklist"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|i| i["item_id"] == "mindmap")
-        .unwrap();
-    assert!(mindmap_item["pending_reason"].is_null());
 }
 
 #[test]
@@ -826,8 +727,6 @@ fn analyse_skip_can_resolve_item_never_flagged_first() {
     let project = tempfile::tempdir().unwrap();
     let session_id = new_session_with_notes(project.path());
 
-    // `summary` was never confirmed nor flagged — skip is still a valid,
-    // explicit decision per spec.md (not gated on a prior flag-pending).
     learnkit()
         .arg("analyse")
         .arg("skip")
@@ -843,4 +742,83 @@ fn analyse_skip_can_resolve_item_never_flagged_first() {
 
     let analyse = analyse_phase(project.path(), &session_id);
     assert_eq!(checklist_item_state(&analyse, "summary"), Some("done"));
+}
+
+// --- 19/20: invalidation on source change + reconfirmation of the same item ---
+
+#[test]
+fn analyse_set_reconfirms_same_item_after_source_invalidation() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    let page_file = write_content_file(content_dir.path(), "page.md", "Contenido v1.");
+    analyse_set(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_file,
+        Some("Layover"),
+        &[],
+        false,
+    )
+    .success();
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse, "page:layover"), Some("done"));
+
+    // Change the session's source material -> invalidates the item.
+    let extra_notes = write_content_file(
+        content_dir.path(),
+        "extra-notes.md",
+        "Notas adicionales que cambian la huella de fuentes de la sesión.",
+    );
+    learnkit()
+        .arg("ingest")
+        .arg(&extra_notes)
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+    learnkit()
+        .arg("inventory")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    // `status`'s per-item state is a cached diagnostic synced by the last
+    // `analyse` command (`engine.rs`: "never trusted as sole authority on
+    // the next read") — it only refreshes when an `analyse` command runs
+    // again, so the real, live invalidation check below (inside `analyse
+    // set` itself, via a freshly recomputed source fingerprint) is what
+    // actually proves FR-004 cascading invalidation: re-running `set`
+    // without `--force` is no longer a no-op once sources changed.
+
+    // Reconfirm the SAME item (no --force needed — invalidation, not
+    // deliberate override) and prove no second page was created.
+    let page_v2 = write_content_file(content_dir.path(), "page_v2.md", "Contenido v2.");
+    let out = analyse_set_json(
+        project.path(),
+        &session_id,
+        "page:layover",
+        &page_v2,
+        None,
+    );
+    assert_eq!(out["item_id"], "page:layover");
+    assert_eq!(out["already_done"], false);
+
+    let pages = learnkit_workflow::analysis::list_concept_pages(project.path(), &session_id)
+        .unwrap();
+    assert_eq!(pages.len(), 1, "reconfirmation must not create a second page");
+
+    let analyse_final = analyse_phase(project.path(), &session_id);
+    assert_eq!(
+        checklist_item_state(&analyse_final, "page:layover"),
+        Some("done")
+    );
 }

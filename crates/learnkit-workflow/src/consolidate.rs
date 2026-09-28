@@ -28,9 +28,10 @@ pub enum CandidateType {
 }
 
 /// Traceability back to the part of a session's `analyse` output a candidate
-/// was derived from (FR-012) — `origin` is `"summary"`, `"mindmap"`, or
-/// `"page-<n>"`; `locator` is a free-form pointer within that origin (e.g. an
-/// excerpt or offset), left to the caller.
+/// was derived from (FR-012) — `origin` is `"summary"`, `"mindmap"`, or a
+/// concept page's stable `item_id` (`"page:<id>"`, FR-018); `locator` is a
+/// free-form pointer within that origin (e.g. an excerpt or offset), left to
+/// the caller.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CandidateSourceRef {
     pub origin: String,

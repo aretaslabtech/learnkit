@@ -88,10 +88,11 @@ fn confirm_summary(project_root: &Path, content_dir: &Path, session_id: &str, co
     let summary_file = write_content_file(content_dir, "summary.md", content);
     learnkit()
         .arg("analyse")
-        .arg("summary")
         .arg("set")
         .arg("--session")
         .arg(session_id)
+        .arg("--item")
+        .arg("summary")
         .arg("--file")
         .arg(&summary_file)
         .arg("--path")
@@ -104,16 +105,18 @@ fn add_concept_page(
     project_root: &Path,
     content_dir: &Path,
     session_id: &str,
+    item_id: &str,
     concept: &str,
     content: &str,
 ) {
     let page_file = write_content_file(content_dir, "page.md", content);
     learnkit()
         .arg("analyse")
-        .arg("page")
-        .arg("add")
+        .arg("set")
         .arg("--session")
         .arg(session_id)
+        .arg("--item")
+        .arg(item_id)
         .arg("--concept")
         .arg(concept)
         .arg("--file")
@@ -175,6 +178,7 @@ fn consolidate_produces_traceable_candidates_from_summary_and_pages() {
         project.path(),
         content_dir.path(),
         &session_id,
+        "page:present-perfect",
         "Present perfect",
         "Explicación concentrada del concepto checkpoint para el viaje.",
     );
@@ -198,7 +202,7 @@ fn consolidate_produces_traceable_candidates_from_summary_and_pages() {
         .any(|c| c["source_ref"]["origin"] == "summary"));
     assert!(candidates
         .iter()
-        .any(|c| c["source_ref"]["origin"] == "page-1"));
+        .any(|c| c["source_ref"]["origin"] == "page:present-perfect"));
 }
 
 // --- T028: a candidate whose lemma already exists as a `VocabularyEntry`

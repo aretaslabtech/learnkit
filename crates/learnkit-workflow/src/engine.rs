@@ -29,7 +29,7 @@ pub enum PhaseResult {
 }
 
 /// State of a single element inside a checklist-bearing phase's manifest
-/// (e.g. `summary`/`mindmap`/`page-<n>` within `analyse`), per
+/// (e.g. `summary`/`mindmap`/`page:<id>` within `analyse`), per
 /// `data-model.md` → ChecklistItemManifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

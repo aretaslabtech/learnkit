@@ -613,9 +613,9 @@ fn rejected_images_dir(session_paths: &SessionPaths) -> PathBuf {
 
 /// Appends a new rejection record as its own file — never overwrites a
 /// previous rejection, so the session keeps a full history of every
-/// candidate an agent has already turned down for a given concept (mirrors
-/// `learnkit_workflow::analysis::add_concept_page`'s sequential-id
-/// append-only pattern).
+/// candidate an agent has already turned down for a given concept
+/// (append-only, unrelated to `analyse`'s own stable `page:<id>` identity
+/// scheme — this is just a sequential rejection log).
 fn record_rejection(
     session_paths: &SessionPaths,
     record: &RejectedImageRecord,

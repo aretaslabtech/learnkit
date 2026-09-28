@@ -234,6 +234,22 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 10: API pública unificada de `analyse` — `analyse set --item <id>` (FR-018 — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: tres comandos distintos (`summary set`/`mindmap set`/`page add`) para conceptualmente la misma operación ("confirmar un artefacto de análisis"), con asimetrías reales: `page add` nunca actualiza, solo añade; `--filled-gap` solo existe para `summary`; un agente necesita conocer tres formas de hacer lo mismo. Sustituido por `analyse set --item <summary|mindmap|page:<id>>`, upsert idempotente, con identidad estable de página (nunca posicional). Ver FR-018.
+
+- [x] T045 Añadir un campo de orden de creación/persistencia explícito a `ConceptPage` (`crates/learnkit-workflow/src/analysis.rs`) — `list_concept_pages` deja de derivar el orden parseando el `id` como número.
+- [x] T046 Migrar la identidad de `ConceptPage`: de `page-<n>` (posicional) a `page:<id>` (estable). Para sesiones ya persistidas con `page-1`/`page-2`, migrar a `page:1`/`page:2` (sin inventar slugs semánticos sobre título ya persistido); decidir e implementar la estrategia de migración más simple y segura tras inspeccionar cuántos datos/tests reales dependen del formato antiguo. (Inspección: sin `.codegraph`/sesiones reales persistidas con `page-<n>` en el repo — proyecto de un solo usuario, feature completada el mismo día. Decisión: clean-slate, sin ficheros de migración; `order`/`filled_gaps` llevan `#[serde(default)]` por robustez ante datos antiguos hipotéticos.)
+- [x] T047 Implementar `learnkit analyse set --session <id> --item <item_id> --file <f> [--concept <nombre>] [--filled-gap "<c>:<n>"]... [--force]` en `crates/learnkit-cli/src/commands/analyse.rs`: valida `item_id` (`summary`, `mindmap`, o `page:<id-no-vacío>`; rechaza cualquier otro con error estructurado), despacha a la validación de tipo real (`ClassSummary`/`StudyMap`/`ConceptPage`), y aplica la semántica de upsert idempotente descrita en FR-018 (crear/actualizar-tras-invalidación sin `--force`/no-op si ya está al día/`--force` para sustitución deliberada).
+- [x] T048 Generalizar `--filled-gap` a los tres tipos de item, reutilizando su validación existente (no duplicarla por tipo), conservando trazabilidad por item.
+- [x] T049 Actualizar `flag-pending`/`skip` (mismo fichero) para operar sobre los mismos `item_id` que `analyse set`, incluido `page:<id>` — sin exponer ninguna identidad interna posicional al agente.
+- [x] T050 Eliminar `summary set`/`mindmap set`/`page add` como comandos independientes (sin alias de compatibilidad — uso real de un solo usuario, sin carga de compatibilidad que proteger); toda la lógica vive únicamente en `analyse set`.
+- [x] T051 Actualizar consumidores aguas abajo: `export_study_guide.rs` (usa el nuevo campo de orden de T045, no el `id`), `learnkit status --json` (ya compatible por diseño — `item_id` siempre fue un `String` libre, verificar con test), `consolidate` (ya compatible por diseño — usa `page.id` directamente como `origin`, verificar con test que no se rompe con la nueva identidad).
+- [x] T052 Actualizar `crates/learnkit-agent/templates/skills/learnkit-analyse/SKILL.md` para reflejar `analyse set`/`--item` en vez de los tres comandos viejos.
+- [x] T053 Tests de integración (`crates/learnkit-cli/tests/analyse_test.rs`, ampliar/adaptar los ya existentes de summary/mindmap/page a la nueva API) cubriendo como mínimo: crear/reconfirmar-idempotente/sustituir-con-`--force` para `summary`; crear `mindmap` conservando la validación de no-repetición; crear y luego **actualizar** `page:foo` sin crear otra página; cambiar `--concept` conservando `item_id`; varias páginas distintas; `--filled-gap` en los tres tipos y repetido; rechazo de `page:` vacío y de item_ids desconocidos; `flag-pending page:foo` + resolución posterior vía `set`; `skip page:foo`; invalidación por cambio de fuente + reconfirmación del mismo item; `status --json` con los IDs nuevos; `consolidate` con los nuevos `source_ref`; `export study-guide` con orden estable; migración de datos persistidos en formato antiguo (si aplica); no regresión del resto de la suite.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.

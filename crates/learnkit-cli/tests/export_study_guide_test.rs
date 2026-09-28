@@ -69,10 +69,11 @@ fn set_summary(project_root: &Path, session_id: &str, content_dir: &Path, conten
     let file = write_content_file(content_dir, "summary.md", content);
     learnkit()
         .arg("analyse")
-        .arg("summary")
         .arg("set")
         .arg("--session")
         .arg(session_id)
+        .arg("--item")
+        .arg("summary")
         .arg("--file")
         .arg(&file)
         .arg("--path")
@@ -85,10 +86,11 @@ fn set_mindmap(project_root: &Path, session_id: &str, content_dir: &Path, conten
     let file = write_content_file(content_dir, "mindmap.md", content);
     learnkit()
         .arg("analyse")
-        .arg("mindmap")
         .arg("set")
         .arg("--session")
         .arg(session_id)
+        .arg("--item")
+        .arg("mindmap")
         .arg("--file")
         .arg(&file)
         .arg("--path")
@@ -97,14 +99,23 @@ fn set_mindmap(project_root: &Path, session_id: &str, content_dir: &Path, conten
         .success();
 }
 
-fn add_page(project_root: &Path, session_id: &str, content_dir: &Path, name: &str, concept: &str, content: &str) {
+fn add_page(
+    project_root: &Path,
+    session_id: &str,
+    content_dir: &Path,
+    item_id: &str,
+    name: &str,
+    concept: &str,
+    content: &str,
+) {
     let file = write_content_file(content_dir, name, content);
     learnkit()
         .arg("analyse")
-        .arg("page")
-        .arg("add")
+        .arg("set")
         .arg("--session")
         .arg(session_id)
+        .arg("--item")
+        .arg(item_id)
         .arg("--concept")
         .arg(concept)
         .arg("--file")
@@ -139,6 +150,7 @@ fn export_study_guide_includes_all_content_in_order() {
         project.path(),
         &session_id,
         content_dir.path(),
+        "page:concept-a",
         "page1.md",
         "Concepto A",
         "Contenido de la página del concepto A.",
@@ -147,6 +159,7 @@ fn export_study_guide_includes_all_content_in_order() {
         project.path(),
         &session_id,
         content_dir.path(),
+        "page:concept-b",
         "page2.md",
         "Concepto B",
         "Contenido de la página del concepto B.",

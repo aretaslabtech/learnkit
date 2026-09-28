@@ -64,7 +64,7 @@ pub fn run(args: ExportStudyGuideArgs) -> i32 {
             return emit_error(
                 args.json,
                 LearnKitError::ExporterConstraint {
-                    message: "cannot export — no confirmed summary for this session (run `analyse summary set` first)".to_string(),
+                    message: "cannot export — no confirmed summary for this session (run `analyse set --item summary` first)".to_string(),
                 },
             )
         }

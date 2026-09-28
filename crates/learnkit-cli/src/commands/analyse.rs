@@ -1,14 +1,24 @@
-//! `learnkit analyse summary/mindmap/page` — confirms the `analyse` phase's
-//! checklist elements (US2, feature 003). Content is always redacted by an
-//! agent via the `learnkit-analyse` Skill; this module only validates
+//! `learnkit analyse set` — confirms the `analyse` phase's checklist
+//! elements (US2, feature 003; unified onto a single item-based API by
+//! FR-018, Phase 10). Content is always redacted by an agent via the
+//! `learnkit-analyse` Skill; this module only validates
 //! structure/traceability and persists — never prose quality
 //! (`contracts/agent-skill.md`, Principio IV).
+//!
+//! Every result of `analyse` — the summary, the mind map, and any number of
+//! concept pages — is addressed through one stable `item_id`: `summary`,
+//! `mindmap`, or `page:<stable_id>`. `summary`/`mindmap` are reserved
+//! singleton ids; any `page:<id>` (non-empty `<id>`) identifies a
+//! `ConceptPage` with a stable identity chosen by the caller, never
+//! positional. The underlying domain types (`ClassSummary`/`StudyMap`/
+//! `ConceptPage`) and their own validation rules are unchanged — only the
+//! CLI surface is unified (FR-018).
 //!
 //! `learnkit analyse flag-pending/skip` (US3, feature 003) let a checklist
 //! item be marked `pending_user_decision` when the source material isn't
 //! enough to redact it, and later resolved explicitly (either by confirming
-//! real content via `summary`/`mindmap`/`page` once it exists, or by
-//! `skip`ping it) — see `contracts/cli-commands.md`.
+//! real content via `analyse set` once it exists, or by `skip`ping it) — see
+//! `contracts/cli-commands.md`.
 
 use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
@@ -33,23 +43,50 @@ pub struct AnalyseArgs {
 
 #[derive(Subcommand)]
 enum AnalyseAction {
-    /// Confirm the `summary` checklist element.
-    Summary(SummaryArgs),
-    /// Confirm the `mindmap` checklist element.
-    Mindmap(MindmapArgs),
-    /// Add and confirm a `page-<n>` checklist element.
-    Page(PageArgs),
+    /// Upsert one analysis item (`summary`, `mindmap`, or `page:<id>`).
+    Set(SetArgs),
     /// Mark a checklist item as `pending_user_decision` with a reason
-    /// (US3, FR-007) — item is `summary`, `mindmap`, or `page-<n>`.
+    /// (US3, FR-007) — item is `summary`, `mindmap`, or `page:<id>`.
     FlagPending(ItemActionArgs),
     /// Resolve a checklist item explicitly without confirming real content
-    /// (US3, FR-008) — item is `summary`, `mindmap`, or `page-<n>`.
+    /// (US3, FR-008) — item is `summary`, `mindmap`, or `page:<id>`.
     Skip(ItemActionArgs),
 }
 
 #[derive(Args)]
+struct SetArgs {
+    #[arg(long)]
+    session: Option<String>,
+    /// The analysis item to confirm/update: `summary`, `mindmap`, or
+    /// `page:<stable_id>`.
+    #[arg(long)]
+    item: String,
+    #[arg(long)]
+    file: PathBuf,
+    /// Display name for a `page:<id>` item — required the first time that
+    /// page is created; optional on a later update (keeps the existing
+    /// display name when omitted). Ignored for `summary`/`mindmap`.
+    #[arg(long)]
+    concept: Option<String>,
+    /// A concept the source material left mentioned but unexplained, filled
+    /// in by the redacting agent (FR-006, generalized to every item kind by
+    /// FR-018) — `concepto:nota`, both non-empty.
+    #[arg(long = "filled-gap")]
+    filled_gap: Vec<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+    /// Re-confirms even if the item is already `done` with a matching
+    /// source fingerprint (FR-009 idempotency, same pattern as
+    /// `cards build --force`).
+    #[arg(long)]
+    force: bool,
+}
+
+#[derive(Args)]
 struct ItemActionArgs {
-    /// The checklist item to act on: `summary`, `mindmap`, or `page-<n>`.
+    /// The checklist item to act on: `summary`, `mindmap`, or `page:<id>`.
     item_id: String,
     #[arg(long)]
     session: Option<String>,
@@ -61,86 +98,23 @@ struct ItemActionArgs {
     json: bool,
 }
 
-#[derive(Args)]
-struct SummaryArgs {
-    #[command(subcommand)]
-    action: SummaryAction,
+/// What kind of analysis item an `item_id` string names (FR-018): the
+/// public API is unified, but each kind still routes to its own domain
+/// type/validation (`ClassSummary`/`StudyMap`/`ConceptPage`) internally.
+enum ItemKind {
+    Summary,
+    Mindmap,
+    Page(String),
 }
 
-#[derive(Subcommand)]
-enum SummaryAction {
-    Set(SummarySetArgs),
-}
-
-#[derive(Args)]
-struct SummarySetArgs {
-    #[arg(long)]
-    session: Option<String>,
-    #[arg(long)]
-    file: PathBuf,
-    /// A concept the source material left mentioned but unexplained, filled
-    /// in by the redacting agent (FR-006) — `concepto:nota`, both non-empty.
-    #[arg(long = "filled-gap")]
-    filled_gap: Vec<String>,
-    #[arg(long)]
-    path: Option<PathBuf>,
-    #[arg(long)]
-    json: bool,
-    /// Re-confirms even if `summary` is already `done` with a matching
-    /// source fingerprint (FR-009 idempotency, same pattern as
-    /// `cards build --force`).
-    #[arg(long)]
-    force: bool,
-}
-
-#[derive(Args)]
-struct MindmapArgs {
-    #[command(subcommand)]
-    action: MindmapAction,
-}
-
-#[derive(Subcommand)]
-enum MindmapAction {
-    Set(MindmapSetArgs),
-}
-
-#[derive(Args)]
-struct MindmapSetArgs {
-    #[arg(long)]
-    session: Option<String>,
-    #[arg(long)]
-    file: PathBuf,
-    #[arg(long)]
-    path: Option<PathBuf>,
-    #[arg(long)]
-    json: bool,
-    #[arg(long)]
-    force: bool,
-}
-
-#[derive(Args)]
-struct PageArgs {
-    #[command(subcommand)]
-    action: PageAction,
-}
-
-#[derive(Subcommand)]
-enum PageAction {
-    Add(PageAddArgs),
-}
-
-#[derive(Args)]
-struct PageAddArgs {
-    #[arg(long)]
-    session: Option<String>,
-    #[arg(long)]
-    concept: String,
-    #[arg(long)]
-    file: PathBuf,
-    #[arg(long)]
-    path: Option<PathBuf>,
-    #[arg(long)]
-    json: bool,
+impl ItemKind {
+    fn label(&self) -> &'static str {
+        match self {
+            ItemKind::Summary => "class_summary",
+            ItemKind::Mindmap => "study_map",
+            ItemKind::Page(_) => "concept_page",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -152,6 +126,10 @@ struct AnalyseData {
     #[serde(skip_serializing_if = "Option::is_none")]
     already_done: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    concept: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     resolution: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
@@ -159,27 +137,46 @@ struct AnalyseData {
 
 pub fn run(args: AnalyseArgs) -> i32 {
     match args.action {
-        AnalyseAction::Summary(a) => match a.action {
-            SummaryAction::Set(a) => run_summary_set(a),
-        },
-        AnalyseAction::Mindmap(a) => match a.action {
-            MindmapAction::Set(a) => run_mindmap_set(a),
-        },
-        AnalyseAction::Page(a) => match a.action {
-            PageAction::Add(a) => run_page_add(a),
-        },
+        AnalyseAction::Set(a) => run_set(a),
         AnalyseAction::FlagPending(a) => run_flag_pending(a),
         AnalyseAction::Skip(a) => run_skip(a),
     }
 }
 
-fn run_summary_set(args: SummarySetArgs) -> i32 {
+/// Parses and validates an `item_id`'s shape (FR-018): `summary`/`mindmap`
+/// are reserved singletons; any other id must be `page:<non-empty-id>`.
+/// Rejects everything else with a structured, useful error — never silently
+/// falls back to treating an unknown id as a page.
+fn parse_item_id(item_id: &str) -> Result<ItemKind, LearnKitError> {
+    match item_id {
+        "summary" => Ok(ItemKind::Summary),
+        "mindmap" => Ok(ItemKind::Mindmap),
+        _ => match item_id.strip_prefix("page:") {
+            Some(rest) if !rest.is_empty() => Ok(ItemKind::Page(rest.to_string())),
+            Some(_) => Err(LearnKitError::ValidationFailed {
+                message: "'page:' necesita un id no vacío después de los dos puntos (p. ej. 'page:layover')".to_string(),
+            }),
+            None => Err(LearnKitError::ValidationFailed {
+                message: format!(
+                    "'{item_id}' no es un item_id válido de 'analyse' (se esperaba 'summary', 'mindmap' o 'page:<id>')"
+                ),
+            }),
+        },
+    }
+}
+
+fn run_set(args: SetArgs) -> i32 {
     let root = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
     let session_id = match resolve_session(&root, args.session.clone()) {
         Ok(id) => id,
         Err(err) => return emit_error(args.json, err),
     };
     let session_paths = SessionPaths::new(&root, &session_id);
+
+    let kind = match parse_item_id(&args.item) {
+        Ok(k) => k,
+        Err(err) => return emit_error(args.json, err),
+    };
 
     let content = match read_content_file(&args.file) {
         Ok(c) => c,
@@ -194,147 +191,23 @@ fn run_summary_set(args: SummarySetArgs) -> i32 {
         Err(err) => return emit_error(args.json, err),
     };
 
-    if !args.force {
-        match item_already_done(session_paths.root(), "summary", &fingerprint) {
-            Ok(true) => return emit_ok(args.json, "ANALYSE_SUMMARY_SET", "summary", "done", true),
-            Ok(false) => {}
-            Err(err) => return emit_error(args.json, err),
-        }
-    }
-
-    let summary = ClassSummary {
-        session_id: session_id.clone(),
-        content,
-        filled_gaps,
-        source_fingerprint: fingerprint.clone(),
-    };
-    if let Err(source) = analysis::write_summary(&root, &summary) {
-        return emit_error(
-            args.json,
-            LearnKitError::Filesystem {
-                path: root.display().to_string(),
-                source,
-            },
-        );
-    }
-    if let Err(err) = confirm_item(session_paths.root(), "summary", &fingerprint) {
-        return emit_error(args.json, err);
-    }
-    if let Err(err) = sync_output_fingerprint(&session_paths, &fingerprint) {
-        return emit_error(args.json, err);
-    }
-
-    emit_ok(args.json, "ANALYSE_SUMMARY_SET", "summary", "done", false)
-}
-
-fn run_mindmap_set(args: MindmapSetArgs) -> i32 {
-    let root = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
-    let session_id = match resolve_session(&root, args.session.clone()) {
-        Ok(id) => id,
-        Err(err) => return emit_error(args.json, err),
-    };
-    let session_paths = SessionPaths::new(&root, &session_id);
-
-    let content = match read_content_file(&args.file) {
-        Ok(c) => c,
-        Err(err) => return emit_error(args.json, err),
-    };
-
+    // Type-specific structural validation (kept exactly as before FR-018 —
+    // unifying the CLI surface does not unify domain validation):
     // Acceptance Scenario 2 of US2: a mindmap byte-for-byte identical to the
     // session's already-confirmed summary is rejected explicitly — purely
     // structural detection of "not a repetition", never a prose-quality
     // judgment (`contracts/agent-skill.md`).
-    match analysis::read_summary(&root, &session_id) {
-        Ok(Some(summary)) if summary.content == content => {
-            return emit_error(
-                args.json,
-                LearnKitError::ValidationFailed {
-                    message: "el mapa mental no puede ser idéntico, byte a byte, al resumen ya confirmado de esta sesión".to_string(),
-                },
-            );
-        }
-        Ok(_) => {}
-        Err(source) => {
-            return emit_error(
-                args.json,
-                LearnKitError::Filesystem {
-                    path: root.display().to_string(),
-                    source,
-                },
-            )
-        }
-    }
-
-    let fingerprint = match current_source_fingerprint(&root, &session_id) {
-        Ok(f) => f,
-        Err(err) => return emit_error(args.json, err),
-    };
-
-    if !args.force {
-        match item_already_done(session_paths.root(), "mindmap", &fingerprint) {
-            Ok(true) => return emit_ok(args.json, "ANALYSE_MINDMAP_SET", "mindmap", "done", true),
-            Ok(false) => {}
-            Err(err) => return emit_error(args.json, err),
-        }
-    }
-
-    let map = StudyMap {
-        session_id: session_id.clone(),
-        content,
-        source_fingerprint: fingerprint.clone(),
-    };
-    if let Err(source) = analysis::write_study_map(&root, &map) {
-        return emit_error(
-            args.json,
-            LearnKitError::Filesystem {
-                path: root.display().to_string(),
-                source,
-            },
-        );
-    }
-    if let Err(err) = confirm_item(session_paths.root(), "mindmap", &fingerprint) {
-        return emit_error(args.json, err);
-    }
-    if let Err(err) = sync_output_fingerprint(&session_paths, &fingerprint) {
-        return emit_error(args.json, err);
-    }
-
-    emit_ok(args.json, "ANALYSE_MINDMAP_SET", "mindmap", "done", false)
-}
-
-fn run_page_add(args: PageAddArgs) -> i32 {
-    let root = args.path.clone().unwrap_or_else(|| PathBuf::from("."));
-    let session_id = match resolve_session(&root, args.session.clone()) {
-        Ok(id) => id,
-        Err(err) => return emit_error(args.json, err),
-    };
-    let session_paths = SessionPaths::new(&root, &session_id);
-
-    if args.concept.trim().is_empty() {
-        return emit_error(
-            args.json,
-            LearnKitError::ValidationFailed {
-                message: "--concept no puede estar vacío".to_string(),
-            },
-        );
-    }
-
-    let content = match read_content_file(&args.file) {
-        Ok(c) => c,
-        Err(err) => return emit_error(args.json, err),
-    };
-    let fingerprint = match current_source_fingerprint(&root, &session_id) {
-        Ok(f) => f,
-        Err(err) => return emit_error(args.json, err),
-    };
-
-    // Each call creates a brand new, independent checklist element (Edge
-    // Case of spec.md) — no idempotency/`--force` here, unlike
-    // `summary`/`mindmap`.
-    let page =
-        match analysis::add_concept_page(&root, &session_id, &args.concept, &content, &fingerprint)
-        {
-            Ok(p) => p,
+    if let ItemKind::Mindmap = kind {
+        match analysis::read_summary(&root, &session_id) {
+            Ok(Some(summary)) if summary.content == content => {
+                return emit_error(
+                    args.json,
+                    LearnKitError::ValidationFailed {
+                        message: "el mapa mental no puede ser idéntico, byte a byte, al resumen ya confirmado de esta sesión".to_string(),
+                    },
+                );
+            }
+            Ok(_) => {}
             Err(source) => {
                 return emit_error(
                     args.json,
@@ -344,16 +217,152 @@ fn run_page_add(args: PageAddArgs) -> i32 {
                     },
                 )
             }
-        };
+        }
+    }
 
-    if let Err(err) = confirm_item(session_paths.root(), &page.id, &fingerprint) {
+    if !args.force {
+        match item_already_done(session_paths.root(), &args.item, &fingerprint) {
+            Ok(true) => {
+                let concept = existing_concept(&root, &session_id, &kind);
+                return emit_ok(
+                    args.json,
+                    &args.item,
+                    "done",
+                    true,
+                    kind.label(),
+                    concept.as_deref(),
+                );
+            }
+            Ok(false) => {}
+            Err(err) => return emit_error(args.json, err),
+        }
+    }
+
+    let concept_out = match kind {
+        ItemKind::Summary => {
+            let summary = ClassSummary {
+                session_id: session_id.clone(),
+                content,
+                filled_gaps,
+                source_fingerprint: fingerprint.clone(),
+            };
+            if let Err(source) = analysis::write_summary(&root, &summary) {
+                return emit_error(
+                    args.json,
+                    LearnKitError::Filesystem {
+                        path: root.display().to_string(),
+                        source,
+                    },
+                );
+            }
+            None
+        }
+        ItemKind::Mindmap => {
+            let map = StudyMap {
+                session_id: session_id.clone(),
+                content,
+                source_fingerprint: fingerprint.clone(),
+                filled_gaps,
+            };
+            if let Err(source) = analysis::write_study_map(&root, &map) {
+                return emit_error(
+                    args.json,
+                    LearnKitError::Filesystem {
+                        path: root.display().to_string(),
+                        source,
+                    },
+                );
+            }
+            None
+        }
+        ItemKind::Page(ref page_id) => {
+            let full_id = format!("page:{page_id}");
+            let existing = match analysis::read_concept_page(&root, &session_id, &full_id) {
+                Ok(p) => p,
+                Err(source) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::Filesystem {
+                            path: root.display().to_string(),
+                            source,
+                        },
+                    )
+                }
+            };
+            let concept = match (&args.concept, &existing) {
+                (Some(c), _) if !c.trim().is_empty() => c.trim().to_string(),
+                (Some(_), _) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::ValidationFailed {
+                            message: "--concept no puede estar vacío".to_string(),
+                        },
+                    )
+                }
+                (None, Some(p)) => p.concept.clone(),
+                (None, None) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::ValidationFailed {
+                            message: "--concept es obligatorio al crear una página nueva (item_id no existía todavía)".to_string(),
+                        },
+                    )
+                }
+            };
+            match analysis::upsert_concept_page(
+                &root,
+                &session_id,
+                &full_id,
+                &concept,
+                &content,
+                &fingerprint,
+                filled_gaps,
+            ) {
+                Ok(page) => Some(page.concept),
+                Err(source) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::Filesystem {
+                            path: root.display().to_string(),
+                            source,
+                        },
+                    )
+                }
+            }
+        }
+    };
+
+    if let Err(err) = confirm_item(session_paths.root(), &args.item, &fingerprint) {
         return emit_error(args.json, err);
     }
     if let Err(err) = sync_output_fingerprint(&session_paths, &fingerprint) {
         return emit_error(args.json, err);
     }
 
-    emit_ok(args.json, "ANALYSE_PAGE_ADDED", &page.id, "done", false)
+    emit_ok(
+        args.json,
+        &args.item,
+        "done",
+        false,
+        kind.label(),
+        concept_out.as_deref(),
+    )
+}
+
+/// Reads the current display name for an already-`done` item, for reporting
+/// purposes only (never authoritative for validation — that already
+/// happened before this is called).
+fn existing_concept(root: &Path, session_id: &str, kind: &ItemKind) -> Option<String> {
+    match kind {
+        ItemKind::Summary | ItemKind::Mindmap => None,
+        ItemKind::Page(page_id) => {
+            let full_id = format!("page:{page_id}");
+            analysis::read_concept_page(root, session_id, &full_id)
+                .ok()
+                .flatten()
+                .map(|p| p.concept)
+        }
+    }
 }
 
 fn run_flag_pending(args: ItemActionArgs) -> i32 {
@@ -373,7 +382,7 @@ fn run_flag_pending(args: ItemActionArgs) -> i32 {
             },
         );
     }
-    if let Err(err) = validate_item_id(session_paths.root(), &args.item_id) {
+    if let Err(err) = validate_item_id(&args.item_id) {
         return emit_error(args.json, err);
     }
 
@@ -425,7 +434,7 @@ fn run_skip(args: ItemActionArgs) -> i32 {
             },
         );
     }
-    if let Err(err) = validate_item_id(session_paths.root(), &args.item_id) {
+    if let Err(err) = validate_item_id(&args.item_id) {
         return emit_error(args.json, err);
     }
 
@@ -468,55 +477,15 @@ fn run_skip(args: ItemActionArgs) -> i32 {
     emit_skipped(args.json, &args.item_id, &reason)
 }
 
-/// Validates that `item_id` refers to a real checklist item of the `analyse`
-/// phase (US3): either it already exists in the checklist (any state), or —
-/// since `flag-pending`/`skip` may be the very first thing ever recorded for
-/// it — it is a known singleton item (`summary`/`mindmap`) or the next
-/// sequential `page-<n>` id (matching how `analyse page add` assigns ids).
-/// Rejects, e.g., `page-3` when only `page-1`/`page-2` exist.
-fn validate_item_id(session_root: &Path, item_id: &str) -> Result<(), LearnKitError> {
-    let checklist = read_checklist(session_root, "analyse")
-        .map_err(|source| LearnKitError::Filesystem {
-            path: session_root.display().to_string(),
-            source,
-        })?
-        .unwrap_or_default();
-
-    if checklist.iter().any(|item| item.item_id == item_id) {
-        return Ok(());
-    }
-
-    if item_id == "summary" || item_id == "mindmap" {
-        return Ok(());
-    }
-
-    if let Some(rest) = item_id.strip_prefix("page-") {
-        let requested: Option<u32> = rest.parse().ok().filter(|n| *n > 0);
-        let next_expected = checklist
-            .iter()
-            .filter_map(|item| {
-                item.item_id
-                    .strip_prefix("page-")
-                    .and_then(|n| n.parse::<u32>().ok())
-            })
-            .max()
-            .unwrap_or(0)
-            + 1;
-        return match requested {
-            Some(n) if n == next_expected => Ok(()),
-            _ => Err(LearnKitError::ValidationFailed {
-                message: format!(
-                    "'{item_id}' no existe en el checklist de 'analyse' de esta sesión (el siguiente elemento de página esperado es 'page-{next_expected}')"
-                ),
-            }),
-        };
-    }
-
-    Err(LearnKitError::ValidationFailed {
-        message: format!(
-            "'{item_id}' no es un elemento de 'analyse' válido (se esperaba 'summary', 'mindmap' o 'page-<n>')"
-        ),
-    })
+/// Validates that `item_id` has a legal shape for the `analyse` phase
+/// (US3/FR-018): `summary`, `mindmap`, or `page:<non-empty-id>`. Since
+/// Phase 10, page ids are arbitrary agent-chosen stable slugs rather than a
+/// positional sequence, so — unlike the old `page-<n>` scheme — there is no
+/// "next expected id" to check against: `flag-pending`/`skip` may
+/// legitimately be the very first thing ever recorded for a brand new
+/// `page:<id>`, same as `analyse set` creating it for the first time.
+fn validate_item_id(item_id: &str) -> Result<(), LearnKitError> {
+    parse_item_id(item_id).map(|_| ())
 }
 
 fn read_content_file(path: &Path) -> Result<String, LearnKitError> {
@@ -570,7 +539,9 @@ fn current_source_fingerprint(root: &Path, session_id: &str) -> Result<String, L
 
 /// FR-009 idempotency (same pattern as `cards build --force`): an item
 /// already `done` whose live state (fingerprint-checked) is still `done`
-/// means the confirmation is a no-op.
+/// means the confirmation is a no-op. Generalized to every item kind by
+/// FR-018 — `page:<id>` now shares the exact same idempotency semantics as
+/// `summary`/`mindmap`, instead of always creating a new page.
 fn item_already_done(
     session_root: &Path,
     item_id: &str,
@@ -643,22 +614,31 @@ fn sync_output_fingerprint(
     })
 }
 
-fn emit_ok(json: bool, code: &str, item_id: &str, state: &str, already_done: bool) -> i32 {
+fn emit_ok(
+    json: bool,
+    item_id: &str,
+    state: &str,
+    already_done: bool,
+    kind: &str,
+    concept: Option<&str>,
+) -> i32 {
     if json {
         Envelope::ok(
-            code,
+            "ANALYSE_ITEM_SET",
             AnalyseData {
                 item_id: Some(item_id.to_string()),
                 state: Some(state.to_string()),
                 already_done: Some(already_done),
+                kind: Some(kind.to_string()),
+                concept: concept.map(|c| c.to_string()),
                 ..Default::default()
             },
         )
         .print_json();
     } else if already_done {
-        println!("{item_id}: ya estaba {state} (sin cambios en las fuentes)");
+        println!("✓ {item_id} already current (sin cambios en las fuentes)");
     } else {
-        println!("{item_id}: {state}");
+        println!("✓ {item_id} confirmed");
     }
     0
 }

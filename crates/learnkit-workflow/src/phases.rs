@@ -16,8 +16,8 @@ pub fn phase_definitions() -> Vec<PhaseDefinition> {
         // Checklist-bearing phase (`PhaseManifest.checklist`, see
         // `crates/learnkit-workflow/src/engine.rs`): its own manifest starts
         // with an empty checklist (`Some(vec![])`) and gains items —
-        // `summary`, `mindmap`, `page-<n>` — as the `analyse` CLI commands
-        // confirm each one (a later user story). The DAG position itself
+        // `summary`, `mindmap`, `page:<id>` — as `analyse set` confirms each
+        // one (a later user story). The DAG position itself
         // (`requires = [inventory]`) is unchanged by that.
         PhaseDefinition {
             id: "analyse".to_string(),
