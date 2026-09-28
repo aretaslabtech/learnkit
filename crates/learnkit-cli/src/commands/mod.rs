@@ -3,6 +3,7 @@ pub mod analyse;
 pub mod assessment;
 pub mod attempt;
 pub mod cards;
+mod cards_image;
 pub mod consolidate;
 pub mod export;
 pub mod export_anki;

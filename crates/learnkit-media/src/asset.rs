@@ -27,6 +27,15 @@ pub enum AssetOrigin {
         author: String,
         source_url: String,
     },
+    /// An image cropped from an externally-generated grid (e.g. a 4x4 grid
+    /// requested from ChatGPT), manually reviewed for coherence by the agent
+    /// and assigned via `cards image-grid assign` — distinct from `Fetched`
+    /// (Wikimedia, has license metadata) and from audio's `Generated` (a
+    /// direct API call this crate makes itself). Nothing generated this
+    /// asset through an API this crate called; a human ran an external
+    /// prompt and LearnKit only cropped/registered the result, so there is
+    /// no license metadata to carry here.
+    GeneratedGrid { provider: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -274,5 +283,47 @@ mod tests {
     fn loading_an_unknown_id_is_none() {
         let dir = tempfile::tempdir().unwrap();
         assert!(load(dir.path(), "does-not-exist").unwrap().is_none());
+    }
+
+    // --- T4/T8: AssetOrigin::GeneratedGrid round-trips through
+    // register_or_reuse/load exactly like every other origin variant. ---
+    #[test]
+    fn generated_grid_origin_round_trips_through_register_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = AssetOrigin::GeneratedGrid {
+            provider: "chatgpt-grid-manual".to_string(),
+        };
+
+        let registered = register_or_reuse(
+            dir.path(),
+            "fp-grid-1",
+            AssetType::Image,
+            &[7u8; 32],
+            "png",
+            "image/png",
+            origin,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            registered.origin,
+            AssetOrigin::GeneratedGrid { ref provider } if provider == "chatgpt-grid-manual"
+        ));
+
+        let loaded = load(dir.path(), &registered.id).unwrap().unwrap();
+        assert!(matches!(
+            loaded.origin,
+            AssetOrigin::GeneratedGrid { ref provider } if provider == "chatgpt-grid-manual"
+        ));
+    }
+
+    #[test]
+    fn generated_grid_origin_serializes_with_the_shared_kind_tag() {
+        let origin = AssetOrigin::GeneratedGrid {
+            provider: "chatgpt-grid-manual".to_string(),
+        };
+        let json = serde_json::to_value(&origin).unwrap();
+        assert_eq!(json["kind"], "generated_grid");
+        assert_eq!(json["provider"], "chatgpt-grid-manual");
     }
 }
