@@ -3,7 +3,7 @@ use clap::{Args, Subcommand};
 use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
 use learnkit_profile::language::learning_item::{ensure_for_vocabulary, find_by_vocabulary_entry};
-use learnkit_profile::language::vocabulary::{add_or_reuse, find_by_lemma};
+use learnkit_profile::language::vocabulary::{add_or_reuse, find_by_lemma, set_fields};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -34,12 +34,45 @@ enum VocabularyAction {
     /// remove vocabulary; the files under `knowledge/` must never be edited
     /// by hand.
     Remove(RemoveArgs),
+    /// Edit fields of an already-persisted vocabulary entry — FR-012d. The
+    /// only supported way to modify vocabulary; the files under
+    /// `knowledge/` must never be edited by hand. Omitting a flag leaves
+    /// that field exactly as persisted; only `--example` and
+    /// `--clear-examples` affect `examples`, and never affects `id` or
+    /// `sources`.
+    Edit(EditArgs),
 }
 
 #[derive(Args)]
 struct RemoveArgs {
     #[arg(long)]
     lemma: String,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct EditArgs {
+    #[arg(long)]
+    lemma: String,
+    #[arg(long)]
+    sense: Option<String>,
+    #[arg(long = "part-of-speech")]
+    part_of_speech: Option<String>,
+    #[arg(long)]
+    ipa: Option<String>,
+    /// Repeatable. When supplied at least once, REPLACES the existing
+    /// examples list (rather than appending) — FR-012d/T113. Omit both this
+    /// and `--clear-examples` to leave the existing examples untouched.
+    #[arg(long = "example")]
+    example: Vec<String>,
+    /// Empties the examples list explicitly. Without `--example`, this is
+    /// the only way to clear examples — a bare `edit` with neither flag
+    /// must never lose existing data.
+    #[arg(long)]
+    clear_examples: bool,
     #[arg(long)]
     path: Option<PathBuf>,
     #[arg(long)]
@@ -87,6 +120,8 @@ struct LearnData {
     learning_item_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     removed_card_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lemma: Option<String>,
 }
 
 pub fn run(args: LearnArgs) -> i32 {
@@ -94,6 +129,7 @@ pub fn run(args: LearnArgs) -> i32 {
         LearnAction::Vocabulary(v) => match v.action {
             VocabularyAction::Add(a) => run_add(a),
             VocabularyAction::Remove(a) => run_remove(a),
+            VocabularyAction::Edit(a) => run_edit(a),
         },
     }
 }
@@ -191,6 +227,7 @@ fn run_add(args: AddArgs) -> i32 {
                 vocabulary_id: Some(vocab.id),
                 learning_item_id: Some(item.id),
                 removed_card_ids: None,
+                lemma: None,
             },
         )
         .print_json();
@@ -321,6 +358,7 @@ fn run_remove(args: RemoveArgs) -> i32 {
                 vocabulary_id: Some(vocab.id),
                 learning_item_id: item.map(|i| i.id),
                 removed_card_ids: Some(removed_card_ids),
+                lemma: None,
             },
         )
         .print_json();
@@ -331,6 +369,77 @@ fn run_remove(args: RemoveArgs) -> i32 {
             vocab.id,
             removed_card_ids.len()
         );
+    }
+    0
+}
+
+/// FR-012d/T113: edits fields of an already-persisted vocabulary entry —
+/// the only supported way to modify vocabulary state; `knowledge/` must
+/// never be edited by hand. Same "lemma not found" failure pattern as
+/// `run_remove` (exit 40).
+fn run_edit(args: EditArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+
+    let mut vocab = match find_by_lemma(&root, &args.lemma) {
+        Ok(Some(v)) => v,
+        Ok(None) => {
+            return emit_error(
+                args.json,
+                LearnKitError::ExporterConstraint {
+                    message: format!("no vocabulary entry found for lemma '{}'", args.lemma),
+                },
+            )
+        }
+        Err(source) => {
+            return emit_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    // `--example` supplied at least once replaces the list; otherwise only
+    // `--clear-examples` (with none supplied) empties it explicitly. Neither
+    // flag present means "leave examples untouched" (`None`).
+    let examples = if !args.example.is_empty() || args.clear_examples {
+        Some(args.example.as_slice())
+    } else {
+        None
+    };
+
+    if let Err(source) = set_fields(
+        &root,
+        &mut vocab,
+        args.sense.as_deref(),
+        args.part_of_speech.as_deref(),
+        args.ipa.as_deref(),
+        examples,
+    ) {
+        return emit_error(
+            args.json,
+            LearnKitError::Filesystem {
+                path: root.display().to_string(),
+                source,
+            },
+        );
+    }
+
+    if args.json {
+        Envelope::ok(
+            "VOCABULARY_EDITED",
+            LearnData {
+                vocabulary_id: Some(vocab.id.clone()),
+                learning_item_id: None,
+                removed_card_ids: None,
+                lemma: Some(vocab.lemma.clone()),
+            },
+        )
+        .print_json();
+    } else {
+        println!("Vocabulario editado: {} ({})", vocab.lemma, vocab.id);
     }
     0
 }

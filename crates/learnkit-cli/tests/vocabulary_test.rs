@@ -357,3 +357,171 @@ fn learn_vocabulary_remove_deletes_entry_learning_item_and_dependent_cards() {
         .assert()
         .failure();
 }
+
+/// FR-012d/T114: `learn vocabulary edit --lemma <l> --ipa <ipa>` updates
+/// only the IPA of an already-existing entry, leaving sense, examples,
+/// sources, and id untouched.
+#[test]
+fn learn_vocabulary_edit_updates_only_ipa() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, source_id) = new_session_with_notes(dir.path());
+
+    let add_out = learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("add")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--lemma")
+        .arg("whiteboard")
+        .arg("--sense")
+        .arg("pizarra")
+        .arg("--source")
+        .arg(&source_id)
+        .arg("--example")
+        .arg("Write it on the whiteboard.")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let add_json: serde_json::Value = serde_json::from_slice(&add_out).unwrap();
+    let vocabulary_id = add_json["vocabulary_id"].as_str().unwrap().to_string();
+
+    let before =
+        learnkit_profile::language::vocabulary::find_by_id(dir.path(), &vocabulary_id)
+            .unwrap()
+            .unwrap();
+    assert_eq!(before.ipa, None);
+
+    let edit_out = learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("edit")
+        .arg("--lemma")
+        .arg("whiteboard")
+        .arg("--ipa")
+        .arg("ˈwaɪtbɔːd")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let edit_json: serde_json::Value = serde_json::from_slice(&edit_out).unwrap();
+    assert_eq!(edit_json["ok"], true);
+    assert_eq!(edit_json["vocabulary_id"], vocabulary_id);
+
+    let after = learnkit_profile::language::vocabulary::find_by_id(dir.path(), &vocabulary_id)
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(after.id, before.id);
+    assert_eq!(after.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
+    assert_eq!(after.senses, before.senses);
+    assert_eq!(after.examples, before.examples);
+    assert_eq!(after.sources, before.sources);
+}
+
+/// FR-012d/T115: `learn vocabulary edit` on a nonexistent lemma fails
+/// explicitly (exit 40), matching `remove`'s behavior.
+#[test]
+fn learn_vocabulary_edit_on_unknown_lemma_fails_explicitly() {
+    let dir = tempfile::tempdir().unwrap();
+    learnkit().arg("init").arg(dir.path()).assert().success();
+
+    learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("edit")
+        .arg("--lemma")
+        .arg("does-not-exist")
+        .arg("--ipa")
+        .arg("x")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .failure()
+        .code(40);
+}
+
+/// FR-012d: `--example` replaces the examples list rather than appending,
+/// and omitting `--example` entirely leaves the previous list intact.
+#[test]
+fn learn_vocabulary_edit_example_replaces_list_when_supplied() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, source_id) = new_session_with_notes(dir.path());
+
+    learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("add")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--lemma")
+        .arg("whiteboard")
+        .arg("--sense")
+        .arg("pizarra")
+        .arg("--source")
+        .arg(&source_id)
+        .arg("--example")
+        .arg("Original example.")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    // Editing part-of-speech without touching --example must leave the
+    // existing example list intact.
+    learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("edit")
+        .arg("--lemma")
+        .arg("whiteboard")
+        .arg("--part-of-speech")
+        .arg("noun")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let find_entry = || -> learnkit_profile::language::vocabulary::VocabularyEntry {
+        learnkit_profile::language::vocabulary::find_by_lemma(dir.path(), "whiteboard")
+            .unwrap()
+            .unwrap()
+    };
+
+    let mid = find_entry();
+    assert_eq!(mid.part_of_speech.as_deref(), Some("noun"));
+    assert_eq!(mid.examples.len(), 1);
+    assert_eq!(mid.examples[0].text, "Original example.");
+
+    // Now replace the examples list with --example.
+    learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("edit")
+        .arg("--lemma")
+        .arg("whiteboard")
+        .arg("--example")
+        .arg("New example one.")
+        .arg("--example")
+        .arg("New example two.")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let after = find_entry();
+    assert_eq!(after.examples.len(), 2);
+    assert_eq!(after.examples[0].text, "New example one.");
+    assert_eq!(after.examples[1].text, "New example two.");
+    // Untouched fields remain.
+    assert_eq!(after.part_of_speech.as_deref(), Some("noun"));
+}

@@ -199,6 +199,58 @@ pub fn set_details(
     Ok(())
 }
 
+/// Applies an in-place edit to a persisted entry and saves it — `learn
+/// vocabulary edit` (T113/FR-012d). Unlike `set_details` (used by `add`,
+/// where an absent flag simply means "nothing new to record yet"), here
+/// every parameter is an explicit "was this flag supplied" choice from the
+/// CLI layer: `None`/`false` always means "leave this field exactly as
+/// persisted," never "clear it." `examples` replaces the list only when
+/// `Some` (i.e. `--example` was passed at least once, or `--clear-examples`
+/// was passed, in which case the CLI passes `Some(&[])`); `None` leaves the
+/// existing examples untouched. `id` and `sources` are never touched here —
+/// editing must never affect entry identity or traceability (FR-012d).
+pub fn set_fields(
+    project_root: &Path,
+    entry: &mut VocabularyEntry,
+    sense: Option<&str>,
+    part_of_speech: Option<&str>,
+    ipa: Option<&str>,
+    examples: Option<&[String]>,
+) -> std::io::Result<()> {
+    let mut changed = false;
+    if let Some(sense) = sense {
+        if let Some(first) = entry.senses.first_mut() {
+            first.gloss = sense.to_string();
+        } else {
+            entry.senses.push(Sense {
+                gloss: sense.to_string(),
+            });
+        }
+        changed = true;
+    }
+    if let Some(part_of_speech) = part_of_speech {
+        entry.part_of_speech = Some(part_of_speech.to_string());
+        changed = true;
+    }
+    if let Some(ipa) = ipa {
+        entry.ipa = Some(ipa.to_string());
+        changed = true;
+    }
+    if let Some(examples) = examples {
+        entry.examples = examples
+            .iter()
+            .map(|text| Example {
+                text: text.clone(),
+            })
+            .collect();
+        changed = true;
+    }
+    if changed {
+        save(project_root, entry)?;
+    }
+    Ok(())
+}
+
 /// Deletes the persisted `VocabularyEntry` with this `id`, if any —
 /// FR-012c. Returns `false` (not an error) when it didn't exist, so a
 /// caller can distinguish "already gone" from a real filesystem failure.

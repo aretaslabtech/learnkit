@@ -416,6 +416,16 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 19: Editar una entrada de vocabulario (FR-012d — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: `--ipa`/`--example` (Phase 18) solo se pueden fijar al confirmar una entrada nueva; David tiene 127 entradas ya creadas sin esos campos y no hay forma de añadírselos sin borrar y recrear la entrada (perdiendo su `id`/trazabilidad). Ver FR-012d.
+
+- [X] T113 [US3] Añadir `learnkit learn vocabulary edit --lemma <lema> [--sense <s>] [--part-of-speech <p>] [--ipa <ipa>] [--example <e>]...` en `crates/learnkit-cli/src/commands/learn.rs`: busca la entrada por lema (`find_by_lemma`, ya existente), aplica solo los campos indicados (omitir un flag no borra el valor ya guardado), y la persiste con el mismo `id`. Falla explícitamente (mismo patrón que `remove`, exit 40) si el lema no existe. `--example` sin más argumentos no reemplaza los ejemplos existentes; para eso hace falta un flag explícito `--clear-examples` (evita que un `edit` parcial borre datos sin querer).
+- [X] T114 [P] [US3] Test de integración: `learn vocabulary edit --lemma <l> --ipa <ipa>` actualiza el IPA de una entrada ya existente sin tocar sus demás campos (sense, examples, sources) ni cambiar su `id`, en `crates/learnkit-cli/tests/vocabulary_test.rs`.
+- [X] T115 [P] [US3] Test de integración: `learn vocabulary edit` sobre un lema inexistente falla explícitamente (exit 40), igual que ya hace `remove`, en `crates/learnkit-cli/tests/vocabulary_test.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.
