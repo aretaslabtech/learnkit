@@ -67,7 +67,6 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         }
     };
 
-    let incomplete_ids: std::collections::HashSet<String>;
     let incomplete: Vec<IncompleteCard> = cards
         .iter()
         .filter_map(|c| match completeness(c) {
@@ -104,7 +103,8 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         return err.exit_code();
     }
 
-    incomplete_ids = incomplete.iter().map(|c| c.id.clone()).collect();
+    let incomplete_ids: std::collections::HashSet<String> =
+        incomplete.iter().map(|c| c.id.clone()).collect();
     let cards: Vec<_> = cards
         .into_iter()
         .filter(|c| !incomplete_ids.contains(&c.id))

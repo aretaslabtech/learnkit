@@ -402,6 +402,20 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 18: Formato correcto de tarjeta de vocabulario — IPA, ejemplo, audio en ambos lados (FR-013b — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: gap #2 de la Guía maestra (§10.1/10.2), identificado hace tiempo y ahora confirmado explícitamente por David: la plantilla `image-to-production-v1` no coincide con el formato pedagógico real — anverso sin audio, reverso sin IPA/ejemplo/palabra escrita, y el audio del reverso pronunciaba la traducción en castellano con voz inglesa. Ver FR-013b.
+
+- [X] T106 [US4] Añadir `ipa: Option<String>` y `examples: Vec<Example>` (nuevo `struct Example { text: String }`) a `VocabularyEntry` en `crates/learnkit-profile/src/language/vocabulary.rs`; ambos opcionales, sin romper la deserialización de entradas ya persistidas sin estos campos (`#[serde(default)]`).
+- [X] T107 [US4] Añadir `--ipa <texto>` y `--example <texto>` (repetible) a `learnkit learn vocabulary add` en `crates/learnkit-cli/src/commands/learn.rs`, persistidos en la `VocabularyEntry` (depende de T106).
+- [X] T108 [US4] Cambiar `image-to-production-v1` en `crates/learnkit-cards/src/template.rs`: `front_audio` de `Disabled` a `Required`. `back_audio` se mantiene, pero su recurso se deriva del mismo asset ya resuelto en el anverso, nunca de una llamada de generación independiente (depende de T106 solo conceptualmente, no de código).
+- [X] T109 [US4] En `crates/learnkit-cli/src/commands/cards.rs`, reescribir la construcción de bloques de `image-to-production-v1`: anverso = imagen + audio de pronunciación (generado a partir de `item.title`, la palabra en inglés — nunca de `item.summary`); reverso = texto con la palabra (`item.title`), texto con la traducción (`item.summary`), texto con el IPA (si `VocabularyEntry.ipa` existe — requiere pasar ese dato hasta `cards build`, no solo lo que ya expone `LearningItem`), texto con un ejemplo (si existe), y el mismo `asset_id` de audio ya resuelto en el anverso (sin volver a llamar a `resolve_audio`). Corrige de paso el bug encontrado: el audio de pronunciación nunca debe generarse a partir de la traducción en castellano (depende de T106, T108).
+- [X] T110 [P] [US4] Test de integración/unitario: una `VocabularyEntry` con `ipa`/`example` produce una tarjeta cuyo reverso incluye ambos como bloques de texto separados; una sin ninguno de los dos genera una tarjeta igualmente completa, sin esos bloques — en `crates/learnkit-cli/tests/cards_test.rs` o `crates/learnkit-cards/src/card.rs`.
+- [X] T111 [P] [US4] Test unitario: el texto pasado a `resolve_audio` para el audio de pronunciación es siempre la palabra en inglés (`item.title`), nunca la traducción — regresión del bug encontrado, en `crates/learnkit-cli/src/commands/cards.rs`.
+- [X] T112 [P] [US4] Test unitario: el `asset_id` de audio del reverso coincide exactamente con el del anverso en la misma tarjeta (mismo recurso reutilizado, no dos llamadas independientes) — en `crates/learnkit-cli/src/commands/cards.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.

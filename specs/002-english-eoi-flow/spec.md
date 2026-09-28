@@ -186,6 +186,11 @@ Un usuario quiere ver, de un vistazo, en qué destrezas de vocabulario (reconoci
 **Tarjetas y multimedia**
 
 - **FR-013**: El sistema DEBE permitir generar, a partir de un elemento de aprendizaje de vocabulario, una tarjeta de estudio con al menos un lado con imagen y al menos un lado con audio, según la plantilla elegida.
+- **FR-013b** (añadida post-release tras uso real, 2026-09-28 — Guía maestra §10.1/10.2, gap ya identificado y ahora corregido): la plantilla principal de vocabulario (`image-to-production-v1`) DEBE tener el siguiente formato, no el actual (anverso solo con imagen, reverso solo con la traducción):
+  - **Anverso**: imagen representativa **y** audio de pronunciación (ambos obligatorios) — nunca texto que revele la palabra escrita.
+  - **Reverso**: la palabra/expresión en inglés, su traducción/significado en castellano, su transcripción IPA (cuando exista), un ejemplo de uso (cuando exista), y el mismo audio de pronunciación repetido (reutilizando el mismo recurso del anverso, no generado de nuevo).
+  - `VocabularyEntry` DEBE poder almacenar `ipa` y al menos un ejemplo de uso; ambos son opcionales (no bloquean que la tarjeta esté completa si faltan), pero deben mostrarse en el reverso cuando existen.
+  - Corrige además un fallo encontrado al implementar esto: el audio del reverso se generaba hasta ahora a partir del texto de la **traducción en castellano** con una voz `en-GB` (pronunciando español con voz inglesa) — el audio de pronunciación siempre DEBE generarse a partir de la palabra/expresión en inglés, nunca de su traducción.
 - **FR-014**: El sistema DEBE soportar audio distinto e independiente en el lado frontal y en el lado reverso de una misma tarjeta.
 - **FR-015**: Cuando la plantilla de una tarjeta marque un recurso (imagen o audio) como obligatorio en un lado, el sistema NO DEBE considerar esa tarjeta completa/exportable hasta que ese recurso exista y sea válido.
 - **FR-016**: El sistema DEBE reutilizar un recurso multimedia (imagen o audio) ya existente cuando sea equivalente al que necesita una tarjeta nueva, en lugar de duplicarlo.

@@ -9,9 +9,13 @@ use learnkit_core::output::Envelope;
 use learnkit_media::image::WikimediaCommonsProvider;
 use learnkit_media::resolve::{resolve_audio, resolve_image, ResolvedMedia};
 use learnkit_media::voice::RestVoiceProvider;
+use learnkit_profile::language::learning_item::LearningItem;
+use learnkit_profile::language::vocabulary::{find_by_id as find_vocabulary_by_id, VocabularyEntry};
 use learnkit_store::session_paths::SessionPaths;
 use serde::Serialize;
 use std::path::PathBuf;
+
+const IMAGE_TO_PRODUCTION_V1: &str = "image-to-production-v1";
 
 #[derive(Args)]
 pub struct CardsArgs {
@@ -162,85 +166,139 @@ fn run_build(args: BuildArgs) -> i32 {
             }
         }
 
-        let mut front_blocks = Vec::new();
-        if template.front_image != MediaPolicy::Disabled {
-            front_blocks.push(Block::Image {
-                asset_id: resolved_id(
-                    resolve_image(
-                        &assets_dir,
-                        &item.title,
-                        None,
-                        &image_provider,
-                        |url| download_via_provider(&image_provider, url),
-                    ),
-                    template.front_image,
-                    &card_id,
-                    "front",
-                    "image",
-                    &mut media_warnings,
+        let (front_blocks, back_blocks) = if args.template == IMAGE_TO_PRODUCTION_V1 {
+            // FR-013b: front = image + pronunciation audio (both required);
+            // back = word + translation + IPA/example (when present) + the
+            // *same* pronunciation audio, resolved exactly once.
+            let image_asset_id = resolved_id(
+                resolve_image(&assets_dir, &item.title, None, &image_provider, |url| {
+                    download_via_provider(&image_provider, url)
+                }),
+                template.front_image,
+                &card_id,
+                "front",
+                "image",
+                &mut media_warnings,
+            );
+            let audio_asset_id = resolved_id(
+                resolve_audio(
+                    &assets_dir,
+                    pronunciation_source_text(&item),
+                    "en-GB",
+                    "project-default",
+                    None,
+                    &voice_provider,
                 ),
-            });
-        }
-        if template.front_audio != MediaPolicy::Disabled {
-            front_blocks.push(Block::Audio {
-                asset_id: resolved_id(
-                    resolve_audio(
-                        &assets_dir,
-                        &item.title,
-                        "en-GB",
-                        "project-default",
-                        None,
-                        &voice_provider,
-                    ),
-                    template.front_audio,
-                    &card_id,
-                    "front",
-                    "audio",
-                    &mut media_warnings,
-                ),
-            });
-        }
+                template.front_audio,
+                &card_id,
+                "front",
+                "audio",
+                &mut media_warnings,
+            );
 
-        let mut back_blocks = vec![Block::Text {
-            value: item.summary.clone(),
-        }];
-        if template.back_audio != MediaPolicy::Disabled {
-            back_blocks.push(Block::Audio {
-                asset_id: resolved_id(
-                    resolve_audio(
-                        &assets_dir,
-                        &item.summary,
-                        "en-GB",
-                        "project-default",
-                        None,
-                        &voice_provider,
+            let vocabulary_entry =
+                match find_vocabulary_by_id(&root, &item.vocabulary_entry_id) {
+                    Ok(v) => v,
+                    Err(source) => {
+                        return emit_error(
+                            args.json,
+                            LearnKitError::Filesystem {
+                                path: root.display().to_string(),
+                                source,
+                            },
+                        )
+                    }
+                };
+
+            build_image_to_production_blocks(
+                &item,
+                vocabulary_entry.as_ref(),
+                image_asset_id,
+                audio_asset_id,
+            )
+        } else {
+            let mut front_blocks = Vec::new();
+            if template.front_image != MediaPolicy::Disabled {
+                front_blocks.push(Block::Image {
+                    asset_id: resolved_id(
+                        resolve_image(
+                            &assets_dir,
+                            &item.title,
+                            None,
+                            &image_provider,
+                            |url| download_via_provider(&image_provider, url),
+                        ),
+                        template.front_image,
+                        &card_id,
+                        "front",
+                        "image",
+                        &mut media_warnings,
                     ),
-                    template.back_audio,
-                    &card_id,
-                    "back",
-                    "audio",
-                    &mut media_warnings,
-                ),
-            });
-        }
-        if template.back_image != MediaPolicy::Disabled {
-            back_blocks.push(Block::Image {
-                asset_id: resolved_id(
-                    resolve_image(
-                        &assets_dir,
-                        &item.title,
-                        None,
-                        &image_provider,
-                        |url| download_via_provider(&image_provider, url),
+                });
+            }
+            if template.front_audio != MediaPolicy::Disabled {
+                front_blocks.push(Block::Audio {
+                    asset_id: resolved_id(
+                        resolve_audio(
+                            &assets_dir,
+                            &item.title,
+                            "en-GB",
+                            "project-default",
+                            None,
+                            &voice_provider,
+                        ),
+                        template.front_audio,
+                        &card_id,
+                        "front",
+                        "audio",
+                        &mut media_warnings,
                     ),
-                    template.back_image,
-                    &card_id,
-                    "back",
-                    "image",
-                    &mut media_warnings,
-                ),
-            });
-        }
+                });
+            }
+
+            let mut back_blocks = vec![Block::Text {
+                value: item.summary.clone(),
+            }];
+            if template.back_audio != MediaPolicy::Disabled {
+                back_blocks.push(Block::Audio {
+                    asset_id: resolved_id(
+                        resolve_audio(
+                            &assets_dir,
+                            &item.summary,
+                            "en-GB",
+                            "project-default",
+                            None,
+                            &voice_provider,
+                        ),
+                        template.back_audio,
+                        &card_id,
+                        "back",
+                        "audio",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+            if template.back_image != MediaPolicy::Disabled {
+                back_blocks.push(Block::Image {
+                    asset_id: resolved_id(
+                        resolve_image(
+                            &assets_dir,
+                            &item.title,
+                            None,
+                            &image_provider,
+                            |url| download_via_provider(&image_provider, url),
+                        ),
+                        template.back_image,
+                        &card_id,
+                        "back",
+                        "image",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+
+            (front_blocks, back_blocks)
+        };
 
         let card = CardDefinition {
             id: card_id.clone(),
@@ -405,6 +463,68 @@ fn download_via_provider(
     provider.download(url).map_err(std::io::Error::other)
 }
 
+/// The text pronunciation audio must always be generated from — the English
+/// word (`item.title`), never the Spanish translation (`item.summary`).
+/// Extracted as its own pure function so the bug this fixes (FR-013b: audio
+/// was generated from `item.summary`, Spanish text spoken in an `en-GB`
+/// voice) has a direct, dependency-free regression test (T111) without
+/// needing to inject a fake `VoiceProvider` into `run_build`'s hardcoded
+/// `RestVoiceProvider::default()`.
+fn pronunciation_source_text(item: &LearningItem) -> &str {
+    &item.title
+}
+
+/// Builds the front/back blocks for an `image-to-production-v1` card —
+/// FR-013b. Pure (no I/O, no provider calls): takes already-resolved asset
+/// ids and the (optional) `VocabularyEntry` for `ipa`/`examples`, so it's
+/// directly testable (T110, T112) without a real image/voice provider.
+///
+/// - Front: image, then audio (both from the ids given).
+/// - Back: the English word, the translation, the IPA (if present), the
+///   first usage example (if present), then the *same* audio id as the
+///   front — never a second, independently-resolved asset.
+fn build_image_to_production_blocks(
+    item: &LearningItem,
+    vocabulary_entry: Option<&VocabularyEntry>,
+    image_asset_id: Option<String>,
+    audio_asset_id: Option<String>,
+) -> (Vec<Block>, Vec<Block>) {
+    let front_blocks = vec![
+        Block::Image {
+            asset_id: image_asset_id,
+        },
+        Block::Audio {
+            asset_id: audio_asset_id.clone(),
+        },
+    ];
+
+    let mut back_blocks = vec![
+        Block::Text {
+            value: item.title.clone(),
+        },
+        Block::Text {
+            value: item.summary.clone(),
+        },
+    ];
+
+    if let Some(vocab) = vocabulary_entry {
+        if let Some(ipa) = &vocab.ipa {
+            back_blocks.push(Block::Text { value: ipa.clone() });
+        }
+        if let Some(example) = vocab.examples.first() {
+            back_blocks.push(Block::Text {
+                value: example.text.clone(),
+            });
+        }
+    }
+
+    back_blocks.push(Block::Audio {
+        asset_id: audio_asset_id,
+    });
+
+    (front_blocks, back_blocks)
+}
+
 fn to_card_state(card: &CardDefinition) -> CardState {
     match completeness(card) {
         Completeness::Complete => CardState {
@@ -500,5 +620,174 @@ mod tests {
         );
         assert_eq!(id.as_deref(), Some("asset-1"));
         assert!(warnings.is_empty());
+    }
+
+    fn item_with(title: &str, summary: &str) -> LearningItem {
+        LearningItem {
+            id: "li-1".to_string(),
+            kind: "vocabulary".to_string(),
+            title: title.to_string(),
+            summary: summary.to_string(),
+            tags: vec![],
+            mastery_dimensions: vec![],
+            vocabulary_entry_id: "vocab-1".to_string(),
+        }
+    }
+
+    fn vocab_with(
+        ipa: Option<&str>,
+        examples: &[&str],
+    ) -> learnkit_profile::language::vocabulary::VocabularyEntry {
+        use learnkit_profile::language::vocabulary::{Example, Sense, SourceRef, VocabularyEntry};
+        VocabularyEntry {
+            id: "vocab-1".to_string(),
+            language: "en".to_string(),
+            variety: "en-GB".to_string(),
+            lemma: "whiteboard".to_string(),
+            part_of_speech: None,
+            senses: vec![Sense {
+                gloss: "pizarra".to_string(),
+            }],
+            sources: vec![SourceRef {
+                source_id: "src-1".to_string(),
+                locator: None,
+            }],
+            suggested_by: None,
+            ipa: ipa.map(|s| s.to_string()),
+            examples: examples
+                .iter()
+                .map(|t| Example {
+                    text: t.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    // --- T111 (regression, FR-013b): pronunciation audio must always be
+    // generated from item.title (English), never item.summary (Spanish). ---
+    #[test]
+    fn pronunciation_source_text_is_always_the_english_title_not_the_translation() {
+        let item = item_with("whiteboard", "pizarra");
+        assert_eq!(pronunciation_source_text(&item), "whiteboard");
+        assert_ne!(pronunciation_source_text(&item), item.summary);
+    }
+
+    // --- T110: ipa/example present -> separate back text blocks; absent ->
+    // no such blocks, card still complete (no missing-required-field gap). ---
+    #[test]
+    fn back_includes_ipa_and_example_blocks_when_present_on_the_vocabulary_entry() {
+        let item = item_with("whiteboard", "pizarra");
+        let vocab = vocab_with(Some("ˈwaɪtbɔːd"), &["Write it on the whiteboard."]);
+
+        let (_front, back) = build_image_to_production_blocks(
+            &item,
+            Some(&vocab),
+            Some("img-1".to_string()),
+            Some("audio-1".to_string()),
+        );
+
+        let texts: Vec<&str> = back
+            .iter()
+            .filter_map(|b| match b {
+                Block::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            texts,
+            vec!["whiteboard", "pizarra", "ˈwaɪtbɔːd", "Write it on the whiteboard."]
+        );
+    }
+
+    #[test]
+    fn back_omits_ipa_and_example_blocks_when_absent() {
+        let item = item_with("whiteboard", "pizarra");
+        let vocab = vocab_with(None, &[]);
+
+        let (_front, back) = build_image_to_production_blocks(
+            &item,
+            Some(&vocab),
+            Some("img-1".to_string()),
+            Some("audio-1".to_string()),
+        );
+
+        let texts: Vec<&str> = back
+            .iter()
+            .filter_map(|b| match b {
+                Block::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(texts, vec!["whiteboard", "pizarra"]);
+    }
+
+    #[test]
+    fn back_omits_ipa_and_example_blocks_when_no_vocabulary_entry_found() {
+        let item = item_with("whiteboard", "pizarra");
+
+        let (_front, back) = build_image_to_production_blocks(
+            &item,
+            None,
+            Some("img-1".to_string()),
+            Some("audio-1".to_string()),
+        );
+
+        let texts: Vec<&str> = back
+            .iter()
+            .filter_map(|b| match b {
+                Block::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(texts, vec!["whiteboard", "pizarra"]);
+    }
+
+    // --- T112: front and back audio blocks on the same card share the
+    // identical asset_id (the resource is reused, never re-resolved). ---
+    #[test]
+    fn front_and_back_audio_blocks_share_the_identical_asset_id() {
+        let item = item_with("whiteboard", "pizarra");
+        let vocab = vocab_with(None, &[]);
+
+        let (front, back) = build_image_to_production_blocks(
+            &item,
+            Some(&vocab),
+            Some("img-1".to_string()),
+            Some("audio-shared".to_string()),
+        );
+
+        let front_audio = front.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+        let back_audio = back.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+
+        assert_eq!(front_audio, Some(Some("audio-shared".to_string())));
+        assert_eq!(front_audio, back_audio);
+    }
+
+    #[test]
+    fn front_and_back_audio_blocks_are_both_none_when_resolution_failed() {
+        let item = item_with("whiteboard", "pizarra");
+
+        let (front, back) = build_image_to_production_blocks(&item, None, None, None);
+
+        let front_audio = front.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+        let back_audio = back.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+
+        assert_eq!(front_audio, Some(None));
+        assert_eq!(front_audio, back_audio);
     }
 }

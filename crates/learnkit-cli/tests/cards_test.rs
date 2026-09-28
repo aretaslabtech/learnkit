@@ -173,20 +173,36 @@ fn cards_build_reuses_an_already_complete_card_without_reprocessing() {
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     let card_id = json["cards"][0]["id"].as_str().unwrap().to_string();
 
+    // FR-013b: `image-to-production-v1` now also requires audio on both
+    // sides (the back reuses the front's resolved asset), so the planted
+    // "already complete" fixture needs an Audio block on both sides too,
+    // or completeness() would report it pending and reprocess it — which
+    // is exactly what this test must prove does NOT happen.
     const SENTINEL: &str = "sentinel-asset-no-real-provider-could-produce-this";
+    const SENTINEL_AUDIO: &str = "sentinel-audio-no-real-provider-could-produce-this";
     let sentinel_card = learnkit_cards::card::CardDefinition {
         id: card_id.clone(),
         learning_item_ids: vec!["li-whatever".to_string()],
         template: "image-to-production-v1".to_string(),
         front: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Image {
-                asset_id: Some(SENTINEL.to_string()),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Image {
+                    asset_id: Some(SENTINEL.to_string()),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
         back: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Text {
-                value: "pizarra".to_string(),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Text {
+                    value: "pizarra".to_string(),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
     };
     learnkit_cards::card::save(session_paths.root(), &sentinel_card).unwrap();
@@ -242,20 +258,33 @@ fn cards_build_force_reprocesses_an_already_complete_card() {
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     let card_id = json["cards"][0]["id"].as_str().unwrap().to_string();
 
+    // See the "reuses" test above: the fixture needs an Audio block on both
+    // sides too now that image-to-production-v1 requires audio (FR-013b).
     const SENTINEL: &str = "sentinel-asset-no-real-provider-could-produce-this";
+    const SENTINEL_AUDIO: &str = "sentinel-audio-no-real-provider-could-produce-this";
     let sentinel_card = learnkit_cards::card::CardDefinition {
         id: card_id.clone(),
         learning_item_ids: vec!["li-whatever".to_string()],
         template: "image-to-production-v1".to_string(),
         front: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Image {
-                asset_id: Some(SENTINEL.to_string()),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Image {
+                    asset_id: Some(SENTINEL.to_string()),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
         back: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Text {
-                value: "pizarra".to_string(),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Text {
+                    value: "pizarra".to_string(),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
     };
     learnkit_cards::card::save(session_paths.root(), &sentinel_card).unwrap();

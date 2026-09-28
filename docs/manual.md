@@ -252,12 +252,16 @@ learnkit learn vocabulary add \
   --sense "hacer algo malo sin ser castigado" \
   --source <source_id> \
   --locator "segment:00:02:30" \
-  --suggested-by manual
+  --suggested-by manual \
+  --ipa "/ɡet əˈweɪ wɪð/" \
+  --example "He got away with it." \
+  --example "They never get away with anything in this class."
 ```
 
 - `--source` debe ser un id que exista en el inventario de esa sesión (LearnKit lo valida y rechaza typos).
 - Si la misma expresión ya existe de una sesión anterior, se reutiliza — no se duplica.
 - `--suggested-by agent` en vez de `manual` si viene de una sugerencia de tu agente (ver [§12](#12-usar-un-agente-claudecodex-para-sugerir-vocabulario)).
+- `--ipa` (opcional) y `--example` (opcional, repetible) alimentan directamente el reverso de la tarjeta (§8) cuando los suministras — ninguno de los dos es obligatorio para que la entrada quede completa.
 
 ## 8. Generar tarjetas
 
@@ -269,6 +273,10 @@ Para cada palabra sin imagen/audio propio, LearnKit:
 - busca una imagen libre en Wikimedia Commons (con licencia y atribución guardadas),
 - genera audio de pronunciación con el servicio REST configurado por defecto (`https://tts.davidpalazon.net`, voz `en-GB-SoniaNeural`) — necesita la variable de entorno `TTS_API_KEY`; `PiperVoiceProvider` sigue disponible en el código como alternativa 100% offline, pero no es el que usa `cards build` por defecto.
 
+Con la plantilla por defecto (`image-to-production-v1`), la tarjeta queda así (corregido tras uso real, 2026-09-28 — antes el anverso no llevaba audio y el reverso solo mostraba la traducción):
+- **Anverso**: imagen + audio de pronunciación (ambos obligatorios — la tarjeta no se considera completa sin los dos).
+- **Reverso**: la palabra en inglés, su traducción, el IPA (si lo diste con `--ipa` al añadir el vocabulario), un ejemplo de uso (si diste alguno con `--example`), y el mismo audio de pronunciación del anverso repetido (no se genera dos veces).
+
 Comprueba el resultado:
 
 ```bash
@@ -277,7 +285,7 @@ learnkit cards validate --session <session_id> --json
 
 Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tarjeta `pending_*` normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que falta `TTS_API_KEY` — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).
 
-**Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (por ejemplo, el audio del reverso en `image-to-production-v1`) — una tarjeta con ese recurso sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada. Si ves muchos avisos con el mismo motivo (p. ej. "missing TTS_API_KEY environment variable"), es una señal de que falta configurar algo, no de que esas palabras en concreto sean un caso especial.
+**Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (en `image-to-production-v1` ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso `Optional` sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada. Si ves muchos avisos con el mismo motivo (p. ej. "missing TTS_API_KEY environment variable"), es una señal de que falta configurar algo, no de que esas palabras en concreto sean un caso especial.
 
 ## 9. Exportar a Anki
 
@@ -366,7 +374,7 @@ flujo.
 | `learnkit analyse skip <item_id> --session <id> --reason "<r>"` | Omite explícitamente un elemento pendiente, sin confirmar contenido real. |
 | `learnkit consolidate --session <id> [--json]` | Deriva y deduplica candidatos de vocabulario a partir del análisis. |
 | `learnkit consolidate list --session <id> [--json]` | Lista los candidatos ya persistidos de la sesión. |
-| `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual]` | Confirma una entrada de vocabulario. |
+| `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual] [--ipa <ipa>] [--example <e>]...` | Confirma una entrada de vocabulario. `--ipa`/`--example` son opcionales y alimentan el reverso de la tarjeta. |
 | `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario. |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
 | `learnkit export anki --session <id> --out <fichero.apkg> [--skip-incomplete]` | Exporta el mazo. Con `--skip-incomplete`, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué). |

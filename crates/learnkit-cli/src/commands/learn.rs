@@ -66,6 +66,13 @@ struct AddArgs {
     suggested_by: Option<String>,
     #[arg(long)]
     variety: Option<String>,
+    /// IPA transcription — FR-013b. Optional.
+    #[arg(long)]
+    ipa: Option<String>,
+    /// A usage example — FR-013b. Repeatable; only the first is currently
+    /// shown on the card back, but every one supplied is persisted.
+    #[arg(long = "example")]
+    example: Vec<String>,
     #[arg(long)]
     path: Option<PathBuf>,
     #[arg(long)]
@@ -128,7 +135,7 @@ fn run_add(args: AddArgs) -> i32 {
         }
     }
 
-    let vocab = match add_or_reuse(
+    let mut vocab = match add_or_reuse(
         &root,
         &args.lemma,
         &args.sense,
@@ -148,6 +155,21 @@ fn run_add(args: AddArgs) -> i32 {
             )
         }
     };
+
+    if let Err(source) = learnkit_profile::language::vocabulary::set_details(
+        &root,
+        &mut vocab,
+        args.ipa.as_deref(),
+        &args.example,
+    ) {
+        return emit_error(
+            args.json,
+            LearnKitError::Filesystem {
+                path: root.display().to_string(),
+                source,
+            },
+        );
+    }
 
     let item = match ensure_for_vocabulary(&root, &vocab) {
         Ok(i) => i,

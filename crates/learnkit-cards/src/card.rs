@@ -150,17 +150,29 @@ mod tests {
 
     #[test]
     fn complete_when_required_image_present() {
+        // FR-013b: `image-to-production-v1` now requires audio on both
+        // sides too (the back reuses the front's resolved asset).
         let card = card_with(
             "image-to-production-v1",
             Side {
-                blocks: vec![Block::Image {
-                    asset_id: Some("asset-1".to_string()),
-                }],
+                blocks: vec![
+                    Block::Image {
+                        asset_id: Some("asset-1".to_string()),
+                    },
+                    Block::Audio {
+                        asset_id: Some("audio-1".to_string()),
+                    },
+                ],
             },
             Side {
-                blocks: vec![Block::Text {
-                    value: "whiteboard".to_string(),
-                }],
+                blocks: vec![
+                    Block::Text {
+                        value: "whiteboard".to_string(),
+                    },
+                    Block::Audio {
+                        asset_id: Some("audio-1".to_string()),
+                    },
+                ],
             },
         );
 
