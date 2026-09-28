@@ -125,6 +125,18 @@ fn run_build(args: BuildArgs) -> i32 {
         }
     };
 
+    // Hard Guards entry check (odd/tasks/hard-guards-entry-checks.md): a live
+    // check against real data, never against a cached phase manifest —
+    // `vocabulary` never writes one, and this must not retroactively block a
+    // project whose vocabulary/cards already existed before this guard did.
+    if items.is_empty() {
+        return emit_blocked(
+            args.json,
+            "vocabulary",
+            "no hay ningún elemento de aprendizaje de vocabulario — ejecuta 'learn vocabulary add' primero",
+        );
+    }
+
     let Some(template) = find_template(&args.template) else {
         return emit_error(
             args.json,
@@ -561,6 +573,23 @@ fn emit_error(json: bool, err: LearnKitError) -> i32 {
         eprintln!("Error: {err}");
     }
     err.exit_code()
+}
+
+/// Hard Guards entry check failure (odd/tasks/hard-guards-entry-checks.md):
+/// same `code: "BLOCKED"` / exit `20` contract `consolidate`'s own guard
+/// already uses (`GuardBlocked`'s exit-code tier), for consistency across
+/// every guarded command in this project.
+fn emit_blocked(json: bool, phase: &str, reason: &str) -> i32 {
+    if json {
+        Envelope::err("BLOCKED", CardsData::default()).print_json();
+    } else {
+        eprintln!("Error: bloqueado — {reason}");
+    }
+    LearnKitError::GuardBlocked {
+        phase: phase.to_string(),
+        reason: reason.to_string(),
+    }
+    .exit_code()
 }
 
 #[cfg(test)]

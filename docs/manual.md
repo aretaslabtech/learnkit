@@ -459,6 +459,7 @@ Todos los comandos aceptan `--json` para salida estructurada (pensada para agent
 | Una tarjeta queda `pending_image` | Wikimedia Commons no devolvió ninguna imagen con licencia reutilizable (frecuente en modismos/expresiones abstractas). | Suministra tú una imagen, o acepta que esa tarjeta no tenga imagen. |
 | `export anki` falla con exit code `40` | Alguna tarjeta no está `complete`. | El mensaje indica exactamente cuál y qué le falta; corrígela o exporta solo las que sí lo están. |
 | Sin conexión a internet | `cards build` no puede buscar en Wikimedia Commons. | Es el único punto de red de toda la herramienta; todo lo demás funciona offline. El fallo se trata como "sin imagen encontrada", no como error fatal. |
+| `cards build`/`assessment build` fallan con `code: "BLOCKED"`, exit `20` | No hay ningún vocabulario confirmado todavía en el proyecto (Hard Guards, Principio IV: la guarda comprueba en vivo si existe al menos un elemento de aprendizaje, nunca genera en silencio un resultado vacío). | Ejecuta `learn vocabulary add` (manual o vía tu agente) primero. Si ya tenías vocabulario confirmado de antes de esta guarda, no te afecta — la comprobación es contra los datos reales, no contra ningún historial. |
 
 ## 15. Qué no hace (todavía) LearnKit
 

@@ -400,6 +400,7 @@ learnkit progress --skill listening</code></pre>
 <tr><td>Una tarjeta queda <code>pending_image</code></td><td>Wikimedia Commons no devolvió ninguna imagen con licencia reutilizable (frecuente en modismos/expresiones abstractas).</td><td>Suministra tú una imagen, o acepta que esa tarjeta no tenga imagen.</td></tr>
 <tr><td><code>export anki</code> falla con exit code <code>40</code></td><td>Alguna tarjeta no está <code>complete</code>.</td><td>El mensaje indica exactamente cuál y qué le falta; corrígela o exporta solo las que sí lo están.</td></tr>
 <tr><td>Sin conexión a internet</td><td><code>cards build</code> no puede buscar en Wikimedia Commons.</td><td>Es el único punto de red de toda la herramienta; todo lo demás funciona offline. El fallo se trata como "sin imagen encontrada", no como error fatal.</td></tr>
+<tr><td><code>cards build</code>/<code>assessment build</code> fallan con <code>code: "BLOCKED"</code>, exit <code>20</code></td><td>No hay ningún vocabulario confirmado todavía en el proyecto (Hard Guards, Principio IV: la guarda comprueba en vivo si existe al menos un elemento de aprendizaje, nunca genera en silencio un resultado vacío).</td><td>Ejecuta <code>learn vocabulary add</code> (manual o vía tu agente) primero. Si ya tenías vocabulario confirmado de antes de esta guarda, no te afecta — la comprobación es contra los datos reales, no contra ningún historial.</td></tr>
 </tbody>
 </table>
 
