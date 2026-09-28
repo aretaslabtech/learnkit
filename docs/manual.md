@@ -267,7 +267,7 @@ learnkit cards build --session <session_id>
 
 Para cada palabra sin imagen/audio propio, LearnKit:
 - busca una imagen libre en Wikimedia Commons (con licencia y atribución guardadas),
-- genera audio de pronunciación con Piper (si lo tienes instalado).
+- genera audio de pronunciación con el servicio REST configurado por defecto (`https://tts.davidpalazon.net`, voz `en-GB-SoniaNeural`) — necesita la variable de entorno `TTS_API_KEY`; `PiperVoiceProvider` sigue disponible en el código como alternativa 100% offline, pero no es el que usa `cards build` por defecto.
 
 Comprueba el resultado:
 
@@ -275,7 +275,9 @@ Comprueba el resultado:
 learnkit cards validate --session <session_id> --json
 ```
 
-Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tarjeta `pending_*` normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que Piper no está instalado — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).
+Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tarjeta `pending_*` normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que falta `TTS_API_KEY` — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).
+
+**Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (por ejemplo, el audio del reverso en `image-to-production-v1`) — una tarjeta con ese recurso sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada. Si ves muchos avisos con el mismo motivo (p. ej. "missing TTS_API_KEY environment variable"), es una señal de que falta configurar algo, no de que esas palabras en concreto sean un caso especial.
 
 ## 9. Exportar a Anki
 

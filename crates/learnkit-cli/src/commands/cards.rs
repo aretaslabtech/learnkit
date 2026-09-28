@@ -60,10 +60,27 @@ struct CardState {
     reason: Option<String>,
 }
 
+/// An *optional* media slot (e.g. `back_audio: Optional`) that failed to
+/// resolve. `completeness()` never surfaces this — an optional slot missing
+/// its asset doesn't stop a card being `complete` — so without this, a
+/// systemic failure (e.g. `TTS_API_KEY` unset) resolves to `None` silently
+/// on every single card, with no diagnostic anywhere. Found post-release:
+/// 127/127 cards reported `complete` with zero audio, and the only way to
+/// find out why was to read the source.
+#[derive(Debug, Serialize)]
+struct MediaWarning {
+    card_id: String,
+    side: &'static str,
+    kind: &'static str,
+    reason: String,
+}
+
 #[derive(Debug, Serialize, Default)]
 struct CardsData {
     #[serde(skip_serializing_if = "Option::is_none")]
     cards: Option<Vec<CardState>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_warnings: Option<Vec<MediaWarning>>,
 }
 
 pub fn run(args: CardsArgs) -> i32 {
@@ -131,6 +148,7 @@ fn run_build(args: BuildArgs) -> i32 {
     // line goes to stderr so stdout stays clean JSON when --json is used.
     let total = items.len();
     let mut states = Vec::with_capacity(total);
+    let mut media_warnings: Vec<MediaWarning> = Vec::new();
     for (index, item) in items.into_iter().enumerate() {
         eprintln!("[{}/{total}] {} ...", index + 1, item.title);
         let card_id = format!("card-{}", item.id);
@@ -147,25 +165,39 @@ fn run_build(args: BuildArgs) -> i32 {
         let mut front_blocks = Vec::new();
         if template.front_image != MediaPolicy::Disabled {
             front_blocks.push(Block::Image {
-                asset_id: resolved_id(resolve_image(
-                    &assets_dir,
-                    &item.title,
-                    None,
-                    &image_provider,
-                    |url| download_via_provider(&image_provider, url),
-                )),
+                asset_id: resolved_id(
+                    resolve_image(
+                        &assets_dir,
+                        &item.title,
+                        None,
+                        &image_provider,
+                        |url| download_via_provider(&image_provider, url),
+                    ),
+                    template.front_image,
+                    &card_id,
+                    "front",
+                    "image",
+                    &mut media_warnings,
+                ),
             });
         }
         if template.front_audio != MediaPolicy::Disabled {
             front_blocks.push(Block::Audio {
-                asset_id: resolved_id(resolve_audio(
-                    &assets_dir,
-                    &item.title,
-                    "en-GB",
-                    "project-default",
-                    None,
-                    &voice_provider,
-                )),
+                asset_id: resolved_id(
+                    resolve_audio(
+                        &assets_dir,
+                        &item.title,
+                        "en-GB",
+                        "project-default",
+                        None,
+                        &voice_provider,
+                    ),
+                    template.front_audio,
+                    &card_id,
+                    "front",
+                    "audio",
+                    &mut media_warnings,
+                ),
             });
         }
 
@@ -174,25 +206,39 @@ fn run_build(args: BuildArgs) -> i32 {
         }];
         if template.back_audio != MediaPolicy::Disabled {
             back_blocks.push(Block::Audio {
-                asset_id: resolved_id(resolve_audio(
-                    &assets_dir,
-                    &item.summary,
-                    "en-GB",
-                    "project-default",
-                    None,
-                    &voice_provider,
-                )),
+                asset_id: resolved_id(
+                    resolve_audio(
+                        &assets_dir,
+                        &item.summary,
+                        "en-GB",
+                        "project-default",
+                        None,
+                        &voice_provider,
+                    ),
+                    template.back_audio,
+                    &card_id,
+                    "back",
+                    "audio",
+                    &mut media_warnings,
+                ),
             });
         }
         if template.back_image != MediaPolicy::Disabled {
             back_blocks.push(Block::Image {
-                asset_id: resolved_id(resolve_image(
-                    &assets_dir,
-                    &item.title,
-                    None,
-                    &image_provider,
-                    |url| download_via_provider(&image_provider, url),
-                )),
+                asset_id: resolved_id(
+                    resolve_image(
+                        &assets_dir,
+                        &item.title,
+                        None,
+                        &image_provider,
+                        |url| download_via_provider(&image_provider, url),
+                    ),
+                    template.back_image,
+                    &card_id,
+                    "back",
+                    "image",
+                    &mut media_warnings,
+                ),
             });
         }
 
@@ -223,17 +269,33 @@ fn run_build(args: BuildArgs) -> i32 {
         states.push(state);
     }
 
+    let media_warnings = if media_warnings.is_empty() {
+        None
+    } else {
+        Some(media_warnings)
+    };
+
     if args.json {
         Envelope::ok(
             "CARDS_BUILT",
             CardsData {
                 cards: Some(states),
+                media_warnings,
             },
         )
         .print_json();
     } else {
         for c in &states {
             println!("{}\t{}", c.id, c.state);
+        }
+        if let Some(warnings) = &media_warnings {
+            eprintln!(
+                "{} recurso(s) opcional(es) no se pudieron generar (no bloquea la tarjeta, pero probablemente quieras corregirlo):",
+                warnings.len()
+            );
+            for w in warnings {
+                eprintln!("  - {} ({} {}): {}", w.card_id, w.side, w.kind, w.reason);
+            }
         }
     }
     0
@@ -269,6 +331,7 @@ fn run_validate(args: ValidateArgs) -> i32 {
                 "CARDS_VALID",
                 CardsData {
                     cards: Some(states),
+                    media_warnings: None,
                 },
             )
             .print_json();
@@ -277,6 +340,7 @@ fn run_validate(args: ValidateArgs) -> i32 {
                 "CARDS_INCOMPLETE",
                 CardsData {
                     cards: Some(states),
+                    media_warnings: None,
                 },
             )
             .print_json();
@@ -298,10 +362,33 @@ fn run_validate(args: ValidateArgs) -> i32 {
     }
 }
 
-fn resolved_id(resolved: ResolvedMedia) -> Option<String> {
+/// Extracts the resolved asset id, if any. When the slot is `Optional` and
+/// resolution failed, records why in `warnings` instead of discarding the
+/// reason — an `Optional` slot missing its asset never blocks completeness,
+/// so this is the only place that reason is ever seen (post-release fix,
+/// found after `TTS_API_KEY` being unset silently produced zero audio on
+/// every card with no diagnostic anywhere).
+fn resolved_id(
+    resolved: ResolvedMedia,
+    policy: MediaPolicy,
+    card_id: &str,
+    side: &'static str,
+    kind: &'static str,
+    warnings: &mut Vec<MediaWarning>,
+) -> Option<String> {
     match resolved {
         ResolvedMedia::Asset(a) => Some(a.id),
-        ResolvedMedia::Pending { .. } => None,
+        ResolvedMedia::Pending { reason } => {
+            if policy == MediaPolicy::Optional {
+                warnings.push(MediaWarning {
+                    card_id: card_id.to_string(),
+                    side,
+                    kind,
+                    reason,
+                });
+            }
+            None
+        }
     }
 }
 
@@ -345,4 +432,73 @@ fn emit_error(json: bool, err: LearnKitError) -> i32 {
         eprintln!("Error: {err}");
     }
     err.exit_code()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pending(reason: &str) -> ResolvedMedia {
+        ResolvedMedia::Pending {
+            reason: reason.to_string(),
+        }
+    }
+
+    #[test]
+    fn optional_slot_failing_to_resolve_records_a_media_warning() {
+        let mut warnings = Vec::new();
+        let id = resolved_id(
+            pending("missing TTS_API_KEY environment variable"),
+            MediaPolicy::Optional,
+            "card-1",
+            "back",
+            "audio",
+            &mut warnings,
+        );
+        assert_eq!(id, None);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].card_id, "card-1");
+        assert_eq!(warnings[0].side, "back");
+        assert_eq!(warnings[0].kind, "audio");
+        assert_eq!(warnings[0].reason, "missing TTS_API_KEY environment variable");
+    }
+
+    #[test]
+    fn required_slot_failing_to_resolve_does_not_record_a_warning() {
+        // A Required slot's failure already surfaces via `completeness()`
+        // (pending_image/pending_audio) — recording it here too would be a
+        // duplicate, noisier diagnostic for the same fact.
+        let mut warnings = Vec::new();
+        resolved_id(
+            pending("no license-compatible image found"),
+            MediaPolicy::Required,
+            "card-2",
+            "front",
+            "image",
+            &mut warnings,
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn a_resolved_asset_never_records_a_warning() {
+        let mut warnings = Vec::new();
+        let id = resolved_id(
+            ResolvedMedia::Asset(Box::new(learnkit_media::asset::Asset {
+                id: "asset-1".to_string(),
+                asset_type: learnkit_media::asset::AssetType::Audio,
+                path: PathBuf::from("assets/asset-1.mp3"),
+                sha256: "deadbeef".to_string(),
+                mime: "audio/mpeg".to_string(),
+                origin: learnkit_media::asset::AssetOrigin::Supplied,
+            })),
+            MediaPolicy::Optional,
+            "card-3",
+            "back",
+            "audio",
+            &mut warnings,
+        );
+        assert_eq!(id.as_deref(), Some("asset-1"));
+        assert!(warnings.is_empty());
+    }
 }

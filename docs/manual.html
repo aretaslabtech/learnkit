@@ -278,11 +278,12 @@ $ echo $?
 <p>Para cada palabra sin imagen/audio propio, LearnKit:</p>
 <ul>
   <li>busca una imagen libre en Wikimedia Commons (con licencia y atribución guardadas),</li>
-  <li>genera audio de pronunciación con Piper (si lo tienes instalado).</li>
+  <li>genera audio de pronunciación con el servicio REST configurado por defecto (<code>https://tts.davidpalazon.net</code>, voz <code>en-GB-SoniaNeural</code>) — necesita la variable de entorno <code>TTS_API_KEY</code>; <code>PiperVoiceProvider</code> sigue disponible en el código como alternativa 100% offline, pero no es el que usa <code>cards build</code> por defecto.</li>
 </ul>
 <p>Comprueba el resultado:</p>
 <pre><code>learnkit cards validate --session &lt;session_id&gt; --json</code></pre>
-<p>Cada tarjeta aparece como <code>complete</code>, <code>pending_image</code> o <code>pending_audio</code>. Una tarjeta <code>pending_*</code> normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que Piper no está instalado — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).</p>
+<p>Cada tarjeta aparece como <code>complete</code>, <code>pending_image</code> o <code>pending_audio</code>. Una tarjeta <code>pending_*</code> normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que falta <code>TTS_API_KEY</code> — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).</p>
+<p><strong>Cuidado con los recursos opcionales</strong>: algunos lados de algunas plantillas piden un recurso solo como <code>Optional</code> (por ejemplo, el audio del reverso en <code>image-to-production-v1</code>) — una tarjeta con ese recurso sin resolver sigue apareciendo <code>complete</code>, porque no era obligatorio. Revisa siempre <code>media_warnings</code> en la salida de <code>cards build --json</code> (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada. Si ves muchos avisos con el mismo motivo (p. ej. "missing TTS_API_KEY environment variable"), es una señal de que falta configurar algo, no de que esas palabras en concreto sean un caso especial.</p>
 
 <h2 id="s9">9. Exportar a Anki</h2>
 <pre><code>learnkit export anki --session &lt;session_id&gt; --out dist/mi-mazo.apkg</code></pre>

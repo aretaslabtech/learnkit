@@ -393,6 +393,15 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 17: Diagnóstico de recursos opcionales no resueltos (FR-017h — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: David tenía 127/127 tarjetas `complete` sin ninguna con audio — `TTS_API_KEY` no estaba configurada, pero al ser el audio opcional en la plantilla, `cards build`/`cards validate`/`status` nunca lo reportaron; la causa solo se pudo confirmar leyendo el YAML de una tarjeta a mano. Ver FR-017h.
+
+- [X] T104 [US4] En `crates/learnkit-cli/src/commands/cards.rs`, hacer que `resolved_id` reciba la política del recurso y acumule un `MediaWarning { card_id, side, kind, reason }` cuando un recurso `Optional` no se resuelve (nunca para `Required`, que ya se refleja en `completeness()`); `cards build` incluye `media_warnings` en su salida `--json` y las imprime en modo humano.
+- [X] T105 [P] [US4] Test unitario: un recurso `Optional` sin resolver registra un `MediaWarning`; uno `Required` no (ya cubierto por `completeness()`); un recurso resuelto no registra nada — en `crates/learnkit-cli/src/commands/cards.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.
