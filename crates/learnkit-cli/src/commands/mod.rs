@@ -1,9 +1,13 @@
 pub mod agent;
+pub mod analyse;
 pub mod assessment;
 pub mod attempt;
 pub mod cards;
+mod cards_image;
+pub mod consolidate;
 pub mod export;
 pub mod export_anki;
+pub mod export_study_guide;
 pub mod init;
 pub mod inventory;
 pub mod learn;

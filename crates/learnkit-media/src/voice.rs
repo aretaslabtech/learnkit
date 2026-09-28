@@ -121,27 +121,28 @@ impl VoiceProvider for PiperVoiceProvider {
 }
 
 pub const REST_PROVIDER_NAME: &str = "rest-tts";
-const DEFAULT_BASE_URL: &str = "https://tts.davidpalazon.net";
+const DEFAULT_BASE_URL: &str = "https://tts-mcp2.davidpalazon.net";
 const DEFAULT_VOICE: &str = "en-GB-SoniaNeural";
 const API_KEY_ENV: &str = "TTS_API_KEY";
 const REST_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(serde::Serialize)]
-struct SpeechRequestBody<'a> {
-    model: &'a str,
-    voice: &'a str,
-    input: &'a str,
-    response_format: &'a str,
-}
-
-/// Calls a REST TTS service compatible with OpenAI's `/v1/audio/speech`
-/// endpoint (reference implementation: `travisvn/openai-edge-tts`, wrapping
-/// Microsoft Edge's online neural voices via `edge-tts`) — the default
-/// voice provider as of `research.md` §3 (revised 2026-09-27): `Piper`
-/// assumed a local binary + model that turned out not to be installed on
-/// the real machine used for study, while this REST service was already
-/// deployed and verified by the user. `PiperVoiceProvider` remains
-/// available for a fully offline flow.
+/// Calls David's actual deployed TTS service: a simple `GET /speak` with
+/// `text`/`voice`/`format` query params, no authentication — verified
+/// directly against the real endpoint (2026-09-28,
+/// `https://tts-mcp2.davidpalazon.net/speak?text=apple&voice=en-GB-SoniaNeural&format=mp3`
+/// returns a real `audio/mpeg` body with no `Authorization` header sent).
+///
+/// **Post-release correction** (`research.md` §3, second revision): the
+/// original implementation assumed an OpenAI-`/v1/audio/speech`-compatible
+/// POST+JSON+Bearer API (reference: `travisvn/openai-edge-tts`) at
+/// `tts.davidpalazon.net` — a different host, protocol, and auth
+/// requirement from the service actually in use. That mismatch, not a
+/// missing `TTS_API_KEY`, is why every card built so far never got audio:
+/// every request failed before or during the call, because it was hitting
+/// the wrong host and method entirely. `TTS_API_KEY` is now optional — sent
+/// as a bearer token only if present, never required, since the real
+/// service doesn't ask for one. `PiperVoiceProvider` remains available for
+/// a fully offline flow.
 pub struct RestVoiceProvider {
     client: reqwest::blocking::Client,
     base_url: String,
@@ -182,28 +183,22 @@ impl RestVoiceProvider {
 
 impl VoiceProvider for RestVoiceProvider {
     fn synthesize(&self, request: &VoiceRequest) -> Result<AudioAssetDraft, ProviderError> {
-        let api_key = self.api_key.as_ref().ok_or_else(|| ProviderError::ExecutionFailed {
-            provider: REST_PROVIDER_NAME.to_string(),
-            message: format!("missing {API_KEY_ENV} environment variable"),
-        })?;
-
-        let body = SpeechRequestBody {
-            model: "tts-1",
-            voice: &self.voice,
-            input: &request.text,
-            response_format: "mp3",
-        };
-
-        let response = self
+        let mut req = self
             .client
-            .post(format!("{}/v1/audio/speech", self.base_url))
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .map_err(|err| ProviderError::NetworkError {
-                provider: REST_PROVIDER_NAME.to_string(),
-                message: err.to_string(),
-            })?;
+            .get(format!("{}/speak", self.base_url))
+            .query(&[
+                ("text", request.text.as_str()),
+                ("voice", self.voice.as_str()),
+                ("format", "mp3"),
+            ]);
+        if let Some(api_key) = self.api_key.as_ref() {
+            req = req.bearer_auth(api_key);
+        }
+
+        let response = req.send().map_err(|err| ProviderError::NetworkError {
+            provider: REST_PROVIDER_NAME.to_string(),
+            message: err.to_string(),
+        })?;
 
         if !response.status().is_success() {
             return Err(ProviderError::ExecutionFailed {
@@ -367,20 +362,56 @@ mod tests {
     }
 
     #[test]
-    fn rest_provider_without_api_key_fails_without_making_a_network_call() {
-        let provider = RestVoiceProvider::with_config(
-            "http://127.0.0.1:1".to_string(),
-            DEFAULT_VOICE.to_string(),
-            None,
-        );
-        let request = VoiceRequest {
-            text: "hello".to_string(),
-            locale: "en-GB".to_string(),
-            voice_policy: "project-default".to_string(),
-        };
+    fn rest_provider_works_without_an_api_key() {
+        // The real deployed service (verified directly, 2026-09-28) needs no
+        // authentication at all — TTS_API_KEY is optional, never required.
+        let body: &[u8] = b"fake-mp3-bytes";
+        let mut raw = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        raw.extend_from_slice(body);
+        let base_url = spawn_fake_server(raw);
 
-        let err = provider.synthesize(&request).unwrap_err();
-        assert!(matches!(err, ProviderError::ExecutionFailed { .. }));
+        let provider = RestVoiceProvider::with_config(base_url, DEFAULT_VOICE.to_string(), None);
+
+        let draft = provider.synthesize(&sample_request()).unwrap();
+        assert_eq!(draft.content, body);
+    }
+
+    #[test]
+    fn rest_provider_calls_the_speak_endpoint_with_query_params() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base_url = format!("http://127.0.0.1:{port}");
+        let handle = std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request_line = String::from_utf8_lossy(&buf[..n]).to_string();
+            let body: &[u8] = b"fake-mp3-bytes";
+            let mut raw = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .into_bytes();
+            raw.extend_from_slice(body);
+            let _ = stream.write_all(&raw);
+            let _ = stream.flush();
+            request_line
+        });
+
+        let provider = RestVoiceProvider::with_config(base_url, "en-GB-SoniaNeural".to_string(), None);
+        provider.synthesize(&sample_request()).unwrap();
+
+        let request_line = handle.join().unwrap();
+        assert!(request_line.starts_with("GET /speak?"), "{request_line}");
+        assert!(request_line.contains("text=hello"), "{request_line}");
+        assert!(request_line.contains("voice=en-GB-SoniaNeural"), "{request_line}");
+        assert!(request_line.contains("format=mp3"), "{request_line}");
     }
 
     #[test]

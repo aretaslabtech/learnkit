@@ -105,10 +105,20 @@ pub fn run_inventory(args: InventoryArgs) -> i32 {
             let paths = SessionPaths::new(&root, &session_id);
             let manifest = PhaseManifest {
                 phase: "inventory".to_string(),
-                input_fingerprint: String::new(),
+                // `inventory` is the root of the DAG (`requires: []`): it has
+                // no upstream phase to derive an input fingerprint from, so
+                // its own freshly-computed sources fingerprint doubles as
+                // both `input_fingerprint` and `output_fingerprint`. Leaving
+                // `input_fingerprint` empty made `recompute_state` compare
+                // "" against the real hash on every `status` call, which
+                // never matches — the phase showed `dirty` forever, even
+                // right after a successful `inventory` run, blocking every
+                // dependent phase in `status`'s display.
+                input_fingerprint: fingerprint.clone(),
                 output_fingerprint: fingerprint,
                 validated_at: format!("{:?}", SystemTime::now()),
                 result: PhaseResult::Valid,
+                checklist: None,
             };
             let _ = write_manifest(&paths.phase_manifest("inventory"), &manifest);
 

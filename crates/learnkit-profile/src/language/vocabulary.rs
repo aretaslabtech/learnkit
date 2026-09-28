@@ -8,6 +8,14 @@ pub struct Sense {
     pub gloss: String,
 }
 
+/// A usage example for a `VocabularyEntry` — FR-013b. Mirrors `Sense` in
+/// style: a single-field wrapper, kept as a struct (not a bare `String`) so
+/// it can grow (e.g. a source locator) without a breaking format change.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Example {
+    pub text: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SourceRef {
     pub source_id: String,
@@ -27,6 +35,16 @@ pub struct VocabularyEntry {
     pub sources: Vec<SourceRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_by: Option<String>,
+    /// IPA transcription — FR-013b. Optional: absence never blocks a card
+    /// being complete, but it's shown on the card back when present.
+    /// `#[serde(default)]` so an already-persisted entry without this key
+    /// still deserializes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ipa: Option<String>,
+    /// Usage examples — FR-013b. Same backward-compatibility contract as
+    /// `ipa`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<Example>,
 }
 
 fn vocabulary_dir(project_root: &Path) -> PathBuf {
@@ -128,9 +146,109 @@ pub fn add_or_reuse(
         }],
         sources: vec![new_source],
         suggested_by: suggested_by.map(|s| s.to_string()),
+        ipa: None,
+        examples: Vec::new(),
     };
     save(project_root, &entry)?;
     Ok(entry)
+}
+
+/// Finds the persisted entry with this exact `id`, if any — used by `cards
+/// build` (T109) to look up `ipa`/`examples` for a `LearningItem` via its
+/// `vocabulary_entry_id`, since `LearningItem` stays generic and never
+/// carries language-profile-specific fields (Principle VI).
+pub fn find_by_id(project_root: &Path, id: &str) -> std::io::Result<Option<VocabularyEntry>> {
+    let path = vocabulary_dir(project_root).join(format!("{id}.yaml"));
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)?;
+    let entry: VocabularyEntry = serde_yaml::from_str(&raw)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string()))?;
+    Ok(Some(entry))
+}
+
+/// Sets `ipa`/`examples` on a persisted entry and saves it — `learn
+/// vocabulary add --ipa/--example` (T107). Only touches the fields actually
+/// supplied (`None`/empty leaves the existing persisted value alone), so a
+/// later `add_or_reuse` call for the same lemma without these flags never
+/// wipes out previously recorded IPA/examples.
+pub fn set_details(
+    project_root: &Path,
+    entry: &mut VocabularyEntry,
+    ipa: Option<&str>,
+    examples: &[String],
+) -> std::io::Result<()> {
+    let mut changed = false;
+    if let Some(ipa) = ipa {
+        entry.ipa = Some(ipa.to_string());
+        changed = true;
+    }
+    if !examples.is_empty() {
+        entry.examples = examples
+            .iter()
+            .map(|text| Example {
+                text: text.clone(),
+            })
+            .collect();
+        changed = true;
+    }
+    if changed {
+        save(project_root, entry)?;
+    }
+    Ok(())
+}
+
+/// Applies an in-place edit to a persisted entry and saves it — `learn
+/// vocabulary edit` (T113/FR-012d). Unlike `set_details` (used by `add`,
+/// where an absent flag simply means "nothing new to record yet"), here
+/// every parameter is an explicit "was this flag supplied" choice from the
+/// CLI layer: `None`/`false` always means "leave this field exactly as
+/// persisted," never "clear it." `examples` replaces the list only when
+/// `Some` (i.e. `--example` was passed at least once, or `--clear-examples`
+/// was passed, in which case the CLI passes `Some(&[])`); `None` leaves the
+/// existing examples untouched. `id` and `sources` are never touched here —
+/// editing must never affect entry identity or traceability (FR-012d).
+pub fn set_fields(
+    project_root: &Path,
+    entry: &mut VocabularyEntry,
+    sense: Option<&str>,
+    part_of_speech: Option<&str>,
+    ipa: Option<&str>,
+    examples: Option<&[String]>,
+) -> std::io::Result<()> {
+    let mut changed = false;
+    if let Some(sense) = sense {
+        if let Some(first) = entry.senses.first_mut() {
+            first.gloss = sense.to_string();
+        } else {
+            entry.senses.push(Sense {
+                gloss: sense.to_string(),
+            });
+        }
+        changed = true;
+    }
+    if let Some(part_of_speech) = part_of_speech {
+        entry.part_of_speech = Some(part_of_speech.to_string());
+        changed = true;
+    }
+    if let Some(ipa) = ipa {
+        entry.ipa = Some(ipa.to_string());
+        changed = true;
+    }
+    if let Some(examples) = examples {
+        entry.examples = examples
+            .iter()
+            .map(|text| Example {
+                text: text.clone(),
+            })
+            .collect();
+        changed = true;
+    }
+    if changed {
+        save(project_root, entry)?;
+    }
+    Ok(())
 }
 
 /// Deletes the persisted `VocabularyEntry` with this `id`, if any —
@@ -210,5 +328,66 @@ mod tests {
         )
         .unwrap();
         assert_eq!(entry.suggested_by, None);
+    }
+
+    /// T106: an entry persisted before `ipa`/`examples` existed must still
+    /// deserialize — `#[serde(default)]` is what makes this safe.
+    #[test]
+    fn deserializes_a_legacy_entry_missing_ipa_and_examples() {
+        let yaml = r#"
+id: vocab-en-whiteboard-abc123
+language: en
+variety: en-GB
+lemma: whiteboard
+senses:
+  - gloss: pizarra
+sources:
+  - source_id: src-1
+"#;
+        let entry: VocabularyEntry = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(entry.lemma, "whiteboard");
+        assert_eq!(entry.ipa, None);
+        assert!(entry.examples.is_empty());
+    }
+
+    #[test]
+    fn set_details_persists_ipa_and_examples_without_overwriting_when_omitted() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = add_or_reuse(
+            dir.path(),
+            "whiteboard",
+            "pizarra",
+            "src-1",
+            None,
+            None,
+            "en-GB",
+        )
+        .unwrap();
+
+        set_details(
+            dir.path(),
+            &mut entry,
+            Some("ˈwaɪtbɔːd"),
+            &["Write it on the whiteboard.".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(entry.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
+        assert_eq!(entry.examples.len(), 1);
+        assert_eq!(entry.examples[0].text, "Write it on the whiteboard.");
+
+        let reloaded = find_by_id(dir.path(), &entry.id).unwrap().unwrap();
+        assert_eq!(reloaded.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
+
+        // Calling again with nothing supplied must not wipe the existing values.
+        set_details(dir.path(), &mut entry, None, &[]).unwrap();
+        assert_eq!(entry.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
+        assert_eq!(entry.examples.len(), 1);
+    }
+
+    #[test]
+    fn find_by_id_returns_none_for_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(find_by_id(dir.path(), "does-not-exist").unwrap(), None);
     }
 }

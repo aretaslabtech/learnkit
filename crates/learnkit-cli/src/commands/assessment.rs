@@ -69,6 +69,17 @@ fn run_build(args: BuildArgs) -> i32 {
         }
     };
 
+    // Hard Guards entry check (odd/tasks/hard-guards-entry-checks.md): a live
+    // check against real data, never against a cached phase manifest — same
+    // rationale/pattern as cards build's guard.
+    if learning_items.is_empty() {
+        return emit_blocked(
+            args.json,
+            "vocabulary",
+            "no hay ningún elemento de aprendizaje de vocabulario — ejecuta 'learn vocabulary add' primero",
+        );
+    }
+
     let items = build_items(&learning_items);
     for item in &items {
         if let Err(source) = save_item(session_paths.root(), item) {
@@ -140,4 +151,20 @@ fn emit_error(json: bool, err: LearnKitError) -> i32 {
         eprintln!("Error: {err}");
     }
     err.exit_code()
+}
+
+/// Hard Guards entry check failure (odd/tasks/hard-guards-entry-checks.md):
+/// same `code: "BLOCKED"` / exit `20` contract used by `cards build`'s and
+/// `consolidate`'s own guards.
+fn emit_blocked(json: bool, phase: &str, reason: &str) -> i32 {
+    if json {
+        Envelope::err("BLOCKED", AssessmentData::default()).print_json();
+    } else {
+        eprintln!("Error: bloqueado — {reason}");
+    }
+    LearnKitError::GuardBlocked {
+        phase: phase.to_string(),
+        reason: reason.to_string(),
+    }
+    .exit_code()
 }

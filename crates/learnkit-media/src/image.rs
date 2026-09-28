@@ -123,6 +123,12 @@ impl ImageProvider for WikimediaCommonsProvider {
                 ("gsrlimit", "5"),
                 ("prop", "imageinfo"),
                 ("iiprop", "url|extmetadata"),
+                // Downloads a ~800px-wide thumbnail instead of the original
+                // (Guía maestra §12.5 paso 6: 600-1000px, evitar originales
+                // innecesariamente grandes). Wikimedia's API returns a
+                // `thumburl` alongside `url` when this is set; `to_candidate`
+                // prefers it, falling back to `url` if the API ever omits it.
+                ("iiurlwidth", "800"),
             ])
             .send()
             .map_err(|err| ProviderError::NetworkError {
@@ -158,7 +164,7 @@ fn to_candidate(info: ImageInfo) -> Option<ImageCandidate> {
         return None;
     }
     Some(ImageCandidate {
-        url: info.url,
+        url: info.thumburl.unwrap_or(info.url),
         author: meta
             .artist
             .map(|a| a.value)
@@ -188,6 +194,10 @@ struct ApiPage {
 #[derive(Debug, Deserialize)]
 struct ImageInfo {
     url: String,
+    /// Present when the request includes `iiurlwidth` — a resized rendition
+    /// at (up to) that width, preferred over the full-size `url`.
+    #[serde(default)]
+    thumburl: Option<String>,
     descriptionurl: Option<String>,
     extmetadata: Option<ExtMetadata>,
 }
@@ -234,6 +244,42 @@ mod tests {
     fn rejects_non_free_licenses() {
         assert!(!is_license_acceptable("All rights reserved"));
         assert!(!is_license_acceptable(""));
+    }
+
+    #[test]
+    fn to_candidate_prefers_thumburl_over_full_size_url() {
+        let info = ImageInfo {
+            url: "https://upload.wikimedia.org/original-huge.jpg".to_string(),
+            thumburl: Some("https://upload.wikimedia.org/thumb/resized-800.jpg".to_string()),
+            descriptionurl: None,
+            extmetadata: Some(ExtMetadata {
+                license_short_name: MetaValue {
+                    value: "CC0".to_string(),
+                },
+                license_url: None,
+                artist: None,
+            }),
+        };
+        let candidate = to_candidate(info).unwrap();
+        assert_eq!(candidate.url, "https://upload.wikimedia.org/thumb/resized-800.jpg");
+    }
+
+    #[test]
+    fn to_candidate_falls_back_to_full_size_url_when_no_thumburl() {
+        let info = ImageInfo {
+            url: "https://upload.wikimedia.org/original.jpg".to_string(),
+            thumburl: None,
+            descriptionurl: None,
+            extmetadata: Some(ExtMetadata {
+                license_short_name: MetaValue {
+                    value: "CC0".to_string(),
+                },
+                license_url: None,
+                artist: None,
+            }),
+        };
+        let candidate = to_candidate(info).unwrap();
+        assert_eq!(candidate.url, "https://upload.wikimedia.org/original.jpg");
     }
 
     #[test]

@@ -63,6 +63,16 @@ Estados observables:
 
 No guardar `passed=true` como autoridad. El estado guardado es cache/diagnóstico.
 
+### 4.1 Checklist por elemento (fases con checklist)
+
+Una fase puede llevar, además de su estado agregado de la lista anterior, un checklist de elementos independientes (`PhaseManifest.checklist`, hoy usado por `analyse`: `summary`, `mindmap`, `page-<n>`). Cada elemento tiene su propio estado, `ChecklistItemState`, separado del estado agregado de la fase:
+- `pending` — todavía no confirmado ni resuelto;
+- `done` — confirmado con contenido real, o resuelto explícitamente vía `skip` (auditado con motivo);
+- `blocked` — bloqueado por una dependencia no satisfecha;
+- `pending_user_decision` — marcado por el agente (`flag-pending --reason "<motivo>"`) porque el material no basta para confirmarlo; visible en `status` con su motivo, y solo bloquea la parte de una fase posterior (p. ej. `consolidate`) que dependería de ese elemento concreto, no el resto del checklist.
+
+El estado agregado de una fase con checklist se deriva de sus elementos, nunca al revés: `valid` solo si todos son `done`; `PhaseState::NeedsUserInput` si al menos uno sigue `pending_user_decision` y ninguno está `failed`; en otro caso la fase sigue en curso (`dirty`). Una fase sin checklist (`PhaseManifest.checklist = None`) conserva el modelo de estado único de la sección 4 sin cambios — ver `crates/learnkit-workflow/src/engine.rs` (`PhaseState`, `ChecklistItemState`) y `specs/003-analyse-consolidate-checklist/data-model.md`.
+
 ## 5. Guard de entrada
 
 Antes de `learnkit run cards`:

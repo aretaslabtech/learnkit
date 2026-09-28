@@ -31,6 +31,7 @@ dialoguer = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 assert_cmd = "2"
+image = { workspace = true }
 
 [lints]
 workspace = true

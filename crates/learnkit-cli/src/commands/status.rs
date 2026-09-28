@@ -2,7 +2,9 @@ use clap::Args;
 use learnkit_core::error::LearnKitError;
 use learnkit_store::session_paths::SessionPaths;
 use learnkit_store::status::build_status;
-use learnkit_workflow::engine::{read_manifest, recompute_state, PhaseState};
+use learnkit_workflow::engine::{
+    read_manifest, recompute_checklist_item_state, recompute_state, PhaseState,
+};
 use learnkit_workflow::phases::phase_definitions;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -27,6 +29,21 @@ pub struct StatusArgs {
 struct PhaseStatus {
     phase: String,
     state: String,
+    /// Per-item live state for a checklist-bearing phase (`analyse`), per
+    /// `contracts/cli-commands.md` → `learnkit status`. `None` for a phase
+    /// without a checklist (`inventory`, `vocabulary`, ...) — no `checklist`
+    /// key is emitted in JSON for those, preserving the feature 002 output
+    /// shape exactly (FR-003).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checklist: Option<Vec<ChecklistItemStatus>>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChecklistItemStatus {
+    item_id: String,
+    state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pending_reason: Option<String>,
 }
 
 pub fn run(args: StatusArgs) -> i32 {
@@ -60,6 +77,19 @@ pub fn run(args: StatusArgs) -> i32 {
                 if let Some(phases) = &phase_statuses {
                     for p in phases {
                         println!("  fase {}: {}", p.phase, p.state);
+                        if let Some(items) = &p.checklist {
+                            for item in items {
+                                match &item.pending_reason {
+                                    Some(reason) => println!(
+                                        "    - {}: {} ({})",
+                                        item.item_id, item.state, reason
+                                    ),
+                                    None => {
+                                        println!("    - {}: {}", item.item_id, item.state)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -78,6 +108,20 @@ pub fn run(args: StatusArgs) -> i32 {
             eprintln!("Error: {err}");
             err.exit_code()
         }
+    }
+}
+
+/// Renders a `PhaseState`/`ChecklistItemState` using its own
+/// `#[serde(rename_all = "snake_case")]` code (e.g. `PendingUserDecision` ->
+/// `pending_user_decision`), instead of hand-rolling `Debug`-then-lowercase
+/// — which silently produced `pendinguserdecision`/`needsuserinput` for
+/// multi-word variants (found while implementing US3's `flag-pending`/`skip`,
+/// feature 003: `contracts/cli-commands.md` documents `pending_user_decision`
+/// as the exact wire value).
+fn state_code<T: serde::Serialize>(state: &T) -> String {
+    match serde_json::to_value(state) {
+        Ok(serde_json::Value::String(s)) => s,
+        _ => format!("{:?}", std::any::type_name::<T>()),
     }
 }
 
@@ -104,10 +148,35 @@ fn session_phase_statuses(project_root: &Path, session_id: &str) -> Vec<PhaseSta
             manifest.as_ref(),
             &current_input_fingerprint,
         );
+        // Per-item live state (US1, FR-002/FR-004): each item is recomputed
+        // against the phase's current fingerprint rather than trusting its
+        // stored `state`, same cascading-invalidation rule `recompute_state`
+        // already applies at phase granularity. No better per-item source
+        // fingerprint exists yet (that lands with real per-item fingerprints
+        // in a later task), so this reuses the phase-level
+        // `current_input_fingerprint` already computed above.
+        let checklist = manifest
+            .as_ref()
+            .and_then(|m| m.checklist.as_ref())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| {
+                        let live_state =
+                            recompute_checklist_item_state(item, &current_input_fingerprint);
+                        ChecklistItemStatus {
+                            item_id: item.item_id.clone(),
+                            state: state_code(&live_state),
+                            pending_reason: item.pending_reason.clone(),
+                        }
+                    })
+                    .collect()
+            });
         states.insert(def.id.clone(), state);
         ordered.push(PhaseStatus {
             phase: def.id.clone(),
-            state: format!("{state:?}").to_lowercase(),
+            state: state_code(&state),
+            checklist,
         });
     }
 

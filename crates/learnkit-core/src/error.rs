@@ -55,6 +55,13 @@ pub enum LearnKitError {
 
     #[error("exporter constraint failed: {message}")]
     ExporterConstraint { message: String },
+
+    /// Structural/traceability validation failure at the CLI boundary — e.g.
+    /// an empty confirmation file, a malformed `--filled-gap`, or a mindmap
+    /// byte-for-byte identical to its session's summary (feature 003, US2).
+    /// Never a judgment on prose quality (Principio IV) — purely structural.
+    #[error("validation failed: {message}")]
+    ValidationFailed { message: String },
 }
 
 impl LearnKitError {
@@ -73,6 +80,7 @@ impl LearnKitError {
             LearnKitError::GuardBlocked { .. } => "PHASE_BLOCKED",
             LearnKitError::Provider(_) => "PROVIDER_FAILED",
             LearnKitError::ExporterConstraint { .. } => "EXPORT_FAILED",
+            LearnKitError::ValidationFailed { .. } => "VALIDATION_FAILED",
         }
     }
 
@@ -89,6 +97,7 @@ impl LearnKitError {
             LearnKitError::AgentFilesModified { .. } | LearnKitError::GuardBlocked { .. } => 20,
             LearnKitError::Provider(_) => 30,
             LearnKitError::ExporterConstraint { .. } => 40,
+            LearnKitError::ValidationFailed { .. } => 10,
             LearnKitError::Filesystem { .. } => 50,
         }
     }

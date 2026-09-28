@@ -173,20 +173,36 @@ fn cards_build_reuses_an_already_complete_card_without_reprocessing() {
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     let card_id = json["cards"][0]["id"].as_str().unwrap().to_string();
 
+    // FR-013b: `image-to-production-v1` now also requires audio on both
+    // sides (the back reuses the front's resolved asset), so the planted
+    // "already complete" fixture needs an Audio block on both sides too,
+    // or completeness() would report it pending and reprocess it — which
+    // is exactly what this test must prove does NOT happen.
     const SENTINEL: &str = "sentinel-asset-no-real-provider-could-produce-this";
+    const SENTINEL_AUDIO: &str = "sentinel-audio-no-real-provider-could-produce-this";
     let sentinel_card = learnkit_cards::card::CardDefinition {
         id: card_id.clone(),
         learning_item_ids: vec!["li-whatever".to_string()],
         template: "image-to-production-v1".to_string(),
         front: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Image {
-                asset_id: Some(SENTINEL.to_string()),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Image {
+                    asset_id: Some(SENTINEL.to_string()),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
         back: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Text {
-                value: "pizarra".to_string(),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Text {
+                    value: "pizarra".to_string(),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
     };
     learnkit_cards::card::save(session_paths.root(), &sentinel_card).unwrap();
@@ -242,20 +258,33 @@ fn cards_build_force_reprocesses_an_already_complete_card() {
     let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
     let card_id = json["cards"][0]["id"].as_str().unwrap().to_string();
 
+    // See the "reuses" test above: the fixture needs an Audio block on both
+    // sides too now that image-to-production-v1 requires audio (FR-013b).
     const SENTINEL: &str = "sentinel-asset-no-real-provider-could-produce-this";
+    const SENTINEL_AUDIO: &str = "sentinel-audio-no-real-provider-could-produce-this";
     let sentinel_card = learnkit_cards::card::CardDefinition {
         id: card_id.clone(),
         learning_item_ids: vec!["li-whatever".to_string()],
         template: "image-to-production-v1".to_string(),
         front: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Image {
-                asset_id: Some(SENTINEL.to_string()),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Image {
+                    asset_id: Some(SENTINEL.to_string()),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
         back: learnkit_cards::card::Side {
-            blocks: vec![learnkit_cards::card::Block::Text {
-                value: "pizarra".to_string(),
-            }],
+            blocks: vec![
+                learnkit_cards::card::Block::Text {
+                    value: "pizarra".to_string(),
+                },
+                learnkit_cards::card::Block::Audio {
+                    asset_id: Some(SENTINEL_AUDIO.to_string()),
+                },
+            ],
         },
     };
     learnkit_cards::card::save(session_paths.root(), &sentinel_card).unwrap();
@@ -279,4 +308,66 @@ fn cards_build_force_reprocesses_an_already_complete_card() {
         _ => None,
     });
     assert_ne!(front_asset.as_deref(), Some(SENTINEL));
+}
+
+// --- Hard Guards entry check (odd/tasks/hard-guards-entry-checks.md) ---
+
+#[test]
+fn cards_build_is_blocked_when_there_is_no_vocabulary() {
+    let dir = tempfile::tempdir().unwrap();
+    learnkit().arg("init").arg(dir.path()).assert().success();
+    let out = learnkit()
+        .arg("session")
+        .arg("new")
+        .arg("Unit sin vocabulario")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let session_id = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["session_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let assert = learnkit()
+        .arg("cards")
+        .arg("build")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .failure()
+        .code(20);
+
+    let output: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(output["ok"], false);
+    assert_eq!(output["code"], "BLOCKED");
+}
+
+#[test]
+fn cards_build_works_for_preexisting_vocabulary_with_no_phase_manifest_history() {
+    // Regresión explícita del caso real: vocabulario/tarjetas ya confirmados
+    // sin que la fase `vocabulary` haya escrito nunca un manifest (el
+    // mecanismo no existía cuando se creó ese vocabulario). La guarda de
+    // Hard Guards es una comprobación en vivo contra datos reales, nunca
+    // contra un manifest cacheado — así que esto NUNCA debe bloquearse.
+    let dir = tempfile::tempdir().unwrap();
+    let session_id = session_with_vocabulary(dir.path());
+
+    learnkit()
+        .arg("cards")
+        .arg("build")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .success();
 }

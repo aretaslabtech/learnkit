@@ -383,6 +383,49 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 16: Exportar excluyendo tarjetas incompletas (FR-019b — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: David tenía 126/127 tarjetas completas de una sesión real; la única incompleta (`ty numbers (30-90)`, sin imagen posible por ser un concepto abstracto) bloqueaba `export anki` por completo, sin forma de exportar el resto mientras se resolvía esa tarjeta suelta. Ver FR-019b.
+
+- [X] T101 [US5] Añadir el flag `--skip-incomplete` a `learnkit export anki` en `crates/learnkit-cli/src/commands/export_anki.rs`: cuando se pasa, las tarjetas incompletas se excluyen del `.apkg` en vez de bloquear toda la exportación; el resultado (`--json` y humano) DEBE listar qué tarjetas se excluyeron y por qué (mismo shape que `incomplete_cards` ya usa hoy para el caso de fallo). Sin el flag, el comportamiento por defecto sigue siendo FR-019 (falla si hay alguna incompleta).
+- [X] T102 [P] [US5] Test de integración: `export anki` sin `--skip-incomplete` sigue fallando (exit 40) si hay una tarjeta incompleta, exactamente como antes (regresión de FR-019) en `crates/learnkit-cli/tests/export_anki_test.rs`.
+- [X] T103 [P] [US5] Test de integración: `export anki --skip-incomplete` con una tarjeta incompleta entre varias completas exporta un `.apkg` válido con solo las completas, y el resultado indica qué tarjeta se excluyó y por qué en `crates/learnkit-cli/tests/export_anki_test.rs`.
+
+---
+
+## Phase 17: Diagnóstico de recursos opcionales no resueltos (FR-017h — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: David tenía 127/127 tarjetas `complete` sin ninguna con audio — `TTS_API_KEY` no estaba configurada, pero al ser el audio opcional en la plantilla, `cards build`/`cards validate`/`status` nunca lo reportaron; la causa solo se pudo confirmar leyendo el YAML de una tarjeta a mano. Ver FR-017h.
+
+- [X] T104 [US4] En `crates/learnkit-cli/src/commands/cards.rs`, hacer que `resolved_id` reciba la política del recurso y acumule un `MediaWarning { card_id, side, kind, reason }` cuando un recurso `Optional` no se resuelve (nunca para `Required`, que ya se refleja en `completeness()`); `cards build` incluye `media_warnings` en su salida `--json` y las imprime en modo humano.
+- [X] T105 [P] [US4] Test unitario: un recurso `Optional` sin resolver registra un `MediaWarning`; uno `Required` no (ya cubierto por `completeness()`); un recurso resuelto no registra nada — en `crates/learnkit-cli/src/commands/cards.rs`.
+
+---
+
+## Phase 18: Formato correcto de tarjeta de vocabulario — IPA, ejemplo, audio en ambos lados (FR-013b — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: gap #2 de la Guía maestra (§10.1/10.2), identificado hace tiempo y ahora confirmado explícitamente por David: la plantilla `image-to-production-v1` no coincide con el formato pedagógico real — anverso sin audio, reverso sin IPA/ejemplo/palabra escrita, y el audio del reverso pronunciaba la traducción en castellano con voz inglesa. Ver FR-013b.
+
+- [X] T106 [US4] Añadir `ipa: Option<String>` y `examples: Vec<Example>` (nuevo `struct Example { text: String }`) a `VocabularyEntry` en `crates/learnkit-profile/src/language/vocabulary.rs`; ambos opcionales, sin romper la deserialización de entradas ya persistidas sin estos campos (`#[serde(default)]`).
+- [X] T107 [US4] Añadir `--ipa <texto>` y `--example <texto>` (repetible) a `learnkit learn vocabulary add` en `crates/learnkit-cli/src/commands/learn.rs`, persistidos en la `VocabularyEntry` (depende de T106).
+- [X] T108 [US4] Cambiar `image-to-production-v1` en `crates/learnkit-cards/src/template.rs`: `front_audio` de `Disabled` a `Required`. `back_audio` se mantiene, pero su recurso se deriva del mismo asset ya resuelto en el anverso, nunca de una llamada de generación independiente (depende de T106 solo conceptualmente, no de código).
+- [X] T109 [US4] En `crates/learnkit-cli/src/commands/cards.rs`, reescribir la construcción de bloques de `image-to-production-v1`: anverso = imagen + audio de pronunciación (generado a partir de `item.title`, la palabra en inglés — nunca de `item.summary`); reverso = texto con la palabra (`item.title`), texto con la traducción (`item.summary`), texto con el IPA (si `VocabularyEntry.ipa` existe — requiere pasar ese dato hasta `cards build`, no solo lo que ya expone `LearningItem`), texto con un ejemplo (si existe), y el mismo `asset_id` de audio ya resuelto en el anverso (sin volver a llamar a `resolve_audio`). Corrige de paso el bug encontrado: el audio de pronunciación nunca debe generarse a partir de la traducción en castellano (depende de T106, T108).
+- [X] T110 [P] [US4] Test de integración/unitario: una `VocabularyEntry` con `ipa`/`example` produce una tarjeta cuyo reverso incluye ambos como bloques de texto separados; una sin ninguno de los dos genera una tarjeta igualmente completa, sin esos bloques — en `crates/learnkit-cli/tests/cards_test.rs` o `crates/learnkit-cards/src/card.rs`.
+- [X] T111 [P] [US4] Test unitario: el texto pasado a `resolve_audio` para el audio de pronunciación es siempre la palabra en inglés (`item.title`), nunca la traducción — regresión del bug encontrado, en `crates/learnkit-cli/src/commands/cards.rs`.
+- [X] T112 [P] [US4] Test unitario: el `asset_id` de audio del reverso coincide exactamente con el del anverso en la misma tarjeta (mismo recurso reutilizado, no dos llamadas independientes) — en `crates/learnkit-cli/src/commands/cards.rs`.
+
+---
+
+## Phase 19: Editar una entrada de vocabulario (FR-012d — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: `--ipa`/`--example` (Phase 18) solo se pueden fijar al confirmar una entrada nueva; David tiene 127 entradas ya creadas sin esos campos y no hay forma de añadírselos sin borrar y recrear la entrada (perdiendo su `id`/trazabilidad). Ver FR-012d.
+
+- [X] T113 [US3] Añadir `learnkit learn vocabulary edit --lemma <lema> [--sense <s>] [--part-of-speech <p>] [--ipa <ipa>] [--example <e>]...` en `crates/learnkit-cli/src/commands/learn.rs`: busca la entrada por lema (`find_by_lemma`, ya existente), aplica solo los campos indicados (omitir un flag no borra el valor ya guardado), y la persiste con el mismo `id`. Falla explícitamente (mismo patrón que `remove`, exit 40) si el lema no existe. `--example` sin más argumentos no reemplaza los ejemplos existentes; para eso hace falta un flag explícito `--clear-examples` (evita que un `edit` parcial borre datos sin querer).
+- [X] T114 [P] [US3] Test de integración: `learn vocabulary edit --lemma <l> --ipa <ipa>` actualiza el IPA de una entrada ya existente sin tocar sus demás campos (sense, examples, sources) ni cambiar su `id`, en `crates/learnkit-cli/tests/vocabulary_test.rs`.
+- [X] T115 [P] [US3] Test de integración: `learn vocabulary edit` sobre un lema inexistente falla explícitamente (exit 40), igual que ya hace `remove`, en `crates/learnkit-cli/tests/vocabulary_test.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.

@@ -13,6 +13,12 @@ pub fn phase_definitions() -> Vec<PhaseDefinition> {
             id: "inventory".to_string(),
             requires: vec![],
         },
+        // Checklist-bearing phase (`PhaseManifest.checklist`, see
+        // `crates/learnkit-workflow/src/engine.rs`): its own manifest starts
+        // with an empty checklist (`Some(vec![])`) and gains items —
+        // `summary`, `mindmap`, `page:<id>` — as `analyse set` confirms each
+        // one (a later user story). The DAG position itself
+        // (`requires = [inventory]`) is unchanged by that.
         PhaseDefinition {
             id: "analyse".to_string(),
             requires: vec!["inventory".to_string()],
@@ -32,6 +38,17 @@ pub fn phase_definitions() -> Vec<PhaseDefinition> {
         PhaseDefinition {
             id: "assessment".to_string(),
             requires: vec!["vocabulary".to_string()],
+        },
+        // No checklist of its own (`PhaseManifest.checklist = None`, same
+        // single-state model as `inventory`/`vocabulary`/`cards`/`anki`/
+        // `assessment`) — it produces `ConsolidatedCandidate`s from
+        // `analyse`'s already-confirmed output (a later user story), it does
+        // not track sub-elements of its own. Named in
+        // `docs/05-cli-spec.md` but did not exist in the phase DAG before
+        // this feature.
+        PhaseDefinition {
+            id: "consolidate".to_string(),
+            requires: vec!["analyse".to_string()],
         },
     ]
 }
