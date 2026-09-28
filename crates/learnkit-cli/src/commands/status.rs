@@ -111,6 +111,20 @@ pub fn run(args: StatusArgs) -> i32 {
     }
 }
 
+/// Renders a `PhaseState`/`ChecklistItemState` using its own
+/// `#[serde(rename_all = "snake_case")]` code (e.g. `PendingUserDecision` ->
+/// `pending_user_decision`), instead of hand-rolling `Debug`-then-lowercase
+/// — which silently produced `pendinguserdecision`/`needsuserinput` for
+/// multi-word variants (found while implementing US3's `flag-pending`/`skip`,
+/// feature 003: `contracts/cli-commands.md` documents `pending_user_decision`
+/// as the exact wire value).
+fn state_code<T: serde::Serialize>(state: &T) -> String {
+    match serde_json::to_value(state) {
+        Ok(serde_json::Value::String(s)) => s,
+        _ => format!("{:?}", std::any::type_name::<T>()),
+    }
+}
+
 fn session_phase_statuses(project_root: &Path, session_id: &str) -> Vec<PhaseStatus> {
     let paths = SessionPaths::new(project_root, session_id);
     let defs = phase_definitions();
@@ -149,7 +163,7 @@ fn session_phase_statuses(project_root: &Path, session_id: &str) -> Vec<PhaseSta
                         recompute_checklist_item_state(item, &current_input_fingerprint);
                     ChecklistItemStatus {
                         item_id: item.item_id.clone(),
-                        state: format!("{live_state:?}").to_lowercase(),
+                        state: state_code(&live_state),
                         pending_reason: item.pending_reason.clone(),
                     }
                 })
@@ -158,7 +172,7 @@ fn session_phase_statuses(project_root: &Path, session_id: &str) -> Vec<PhaseSta
         states.insert(def.id.clone(), state);
         ordered.push(PhaseStatus {
             phase: def.id.clone(),
-            state: format!("{state:?}").to_lowercase(),
+            state: state_code(&state),
             checklist,
         });
     }

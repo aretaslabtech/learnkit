@@ -462,3 +462,361 @@ fn analyse_summary_set_is_idempotent_and_force_reruns_it() {
         .unwrap();
     assert_eq!(persisted_after_force.content, "Resumen actualizado.");
 }
+
+// --- T022: `analyse flag-pending mindmap --reason "..."` marks the item as
+// `pending_user_decision`, leaving other items unaffected ---
+
+#[test]
+fn analyse_flag_pending_marks_item_as_pending_user_decision_with_reason() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    // Confirm `summary` independently — must be unaffected by flagging `mindmap`.
+    let summary_file = write_content_file(
+        content_dir.path(),
+        "summary.md",
+        "# Resumen\n\nRepaso de present perfect.",
+    );
+    learnkit()
+        .arg("analyse")
+        .arg("summary")
+        .arg("set")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--file")
+        .arg(&summary_file)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let out = learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("no hay material suficiente para redactar el mapa mental")
+        .arg("--path")
+        .arg(project.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["item_id"], "mindmap");
+    assert_eq!(json["state"], "pending_user_decision");
+    assert_eq!(
+        json["reason"],
+        "no hay material suficiente para redactar el mapa mental"
+    );
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(
+        checklist_item_state(&analyse, "mindmap"),
+        Some("pending_user_decision")
+    );
+    let mindmap_item = analyse["checklist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["item_id"] == "mindmap")
+        .unwrap();
+    assert_eq!(
+        mindmap_item["pending_reason"],
+        "no hay material suficiente para redactar el mapa mental"
+    );
+
+    // `summary` followed its own normal course, unaffected.
+    assert_eq!(checklist_item_state(&analyse, "summary"), Some("done"));
+}
+
+#[test]
+fn analyse_flag_pending_rejects_empty_reason() {
+    let project = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("   ")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .failure()
+        .code(10);
+}
+
+#[test]
+fn analyse_flag_pending_rejects_unknown_page_item() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    // Only `page-1` exists so far; `page-3` must be rejected.
+    let page1_file = write_content_file(content_dir.path(), "page1.md", "Explicación del concepto A.");
+    learnkit()
+        .arg("analyse")
+        .arg("page")
+        .arg("add")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--concept")
+        .arg("Concepto A")
+        .arg("--file")
+        .arg(&page1_file)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("page-3")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("falta material")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .failure()
+        .code(10);
+}
+
+#[test]
+fn analyse_flag_pending_allows_first_ever_page_item() {
+    let project = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    // No `analyse` items exist yet at all — `page-1` is a legitimate first item.
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("page-1")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("el material no explica el concepto de la primera página")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(
+        checklist_item_state(&analyse, "page-1"),
+        Some("pending_user_decision")
+    );
+}
+
+// --- T023: providing the missing material and re-calling `analyse mindmap
+// set` clears the pending state without repeating other items' work ---
+
+#[test]
+fn analyse_set_after_flag_pending_clears_pending_state() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    // Confirm `summary` first — must survive untouched throughout.
+    let summary_file = write_content_file(content_dir.path(), "summary.md", "Resumen ya confirmado.");
+    learnkit()
+        .arg("analyse")
+        .arg("summary")
+        .arg("set")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--file")
+        .arg(&summary_file)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("falta material para el mapa mental")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let analyse_before = analyse_phase(project.path(), &session_id);
+    assert_eq!(
+        checklist_item_state(&analyse_before, "mindmap"),
+        Some("pending_user_decision")
+    );
+
+    // The missing material is now provided.
+    let mindmap_file = write_content_file(
+        content_dir.path(),
+        "mindmap.md",
+        "- Present perfect\n  - unfinished time\n- Past simple\n  - closed time",
+    );
+    learnkit()
+        .arg("analyse")
+        .arg("mindmap")
+        .arg("set")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--file")
+        .arg(&mindmap_file)
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let analyse_after = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse_after, "mindmap"), Some("done"));
+    let mindmap_item = analyse_after["checklist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["item_id"] == "mindmap")
+        .unwrap();
+    assert!(mindmap_item["pending_reason"].is_null());
+
+    // `summary`'s already-done work was not repeated/disturbed.
+    assert_eq!(checklist_item_state(&analyse_after, "summary"), Some("done"));
+    let persisted_summary = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted_summary.content, "Resumen ya confirmado.");
+}
+
+// --- T024: `analyse skip mindmap --reason "..."` resolves a pending item
+// auditably; a later `status` query does not show it as pending again ---
+
+#[test]
+fn analyse_skip_resolves_pending_item_and_status_does_not_re_show_pending() {
+    let project = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("falta material para el mapa mental")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let out = learnkit()
+        .arg("analyse")
+        .arg("skip")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("se decide omitir el mapa mental para esta sesión")
+        .arg("--path")
+        .arg(project.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["item_id"], "mindmap");
+    assert_eq!(json["state"], "done");
+    assert_eq!(json["resolution"], "skipped");
+    assert_eq!(
+        json["reason"],
+        "se decide omitir el mapa mental para esta sesión"
+    );
+
+    // Immediately after skip.
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse, "mindmap"), Some("done"));
+
+    // A later, independent `status` query must not show it as
+    // `pending_user_decision` again.
+    let analyse_again = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse_again, "mindmap"), Some("done"));
+    let mindmap_item = analyse_again["checklist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["item_id"] == "mindmap")
+        .unwrap();
+    assert!(mindmap_item["pending_reason"].is_null());
+}
+
+#[test]
+fn analyse_skip_rejects_empty_reason() {
+    let project = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    learnkit()
+        .arg("analyse")
+        .arg("flag-pending")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("falta material")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    learnkit()
+        .arg("analyse")
+        .arg("skip")
+        .arg("mindmap")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .failure()
+        .code(10);
+}
+
+#[test]
+fn analyse_skip_can_resolve_item_never_flagged_first() {
+    let project = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    // `summary` was never confirmed nor flagged — skip is still a valid,
+    // explicit decision per spec.md (not gated on a prior flag-pending).
+    learnkit()
+        .arg("analyse")
+        .arg("skip")
+        .arg("summary")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--reason")
+        .arg("se omite el resumen para esta sesión")
+        .arg("--path")
+        .arg(project.path())
+        .assert()
+        .success();
+
+    let analyse = analyse_phase(project.path(), &session_id);
+    assert_eq!(checklist_item_state(&analyse, "summary"), Some("done"));
+}

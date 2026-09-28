@@ -113,14 +113,14 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 ### Tests for User Story 3
 
-- [ ] T022 [P] [US3] Test de integración: `analyse mindmap flag-pending --reason "..."` marca el elemento como `pending_user_decision` con ese motivo, visible en `status --json`, mientras otros elementos siguen su curso normal (FR-007, Acceptance Scenario 1 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T023 [P] [US3] Test de integración: aportar el material que faltaba y volver a llamar a `analyse mindmap set` limpia el estado pendiente sin repetir el trabajo de los demás elementos (FR-008, Acceptance Scenario 2 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
-- [ ] T024 [P] [US3] Test de integración: `analyse mindmap skip --reason "..."` resuelve el pendiente de forma auditada; una consulta de estado posterior no vuelve a mostrarlo como pendiente de decisión (FR-008, Acceptance Scenario 3 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T022 [P] [US3] Test de integración: `analyse mindmap flag-pending --reason "..."` marca el elemento como `pending_user_decision` con ese motivo, visible en `status --json`, mientras otros elementos siguen su curso normal (FR-007, Acceptance Scenario 1 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T023 [P] [US3] Test de integración: aportar el material que faltaba y volver a llamar a `analyse mindmap set` limpia el estado pendiente sin repetir el trabajo de los demás elementos (FR-008, Acceptance Scenario 2 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
+- [X] T024 [P] [US3] Test de integración: `analyse mindmap skip --reason "..."` resuelve el pendiente de forma auditada; una consulta de estado posterior no vuelve a mostrarlo como pendiente de decisión (FR-008, Acceptance Scenario 3 de US3) en `crates/learnkit-cli/tests/analyse_test.rs`.
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Implementar el handler CLI `analyse <item> flag-pending --reason <motivo>` (escribe `state = PendingUserDecision`, `pending_reason`) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T004, T017).
-- [ ] T026 [US3] Implementar el handler CLI `analyse <item> skip --reason <motivo>` (escribe `resolution = {kind: "skipped", reason}`, deja de bloquear fases dependientes para ese elemento) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T025).
+- [X] T025 [US3] Implementar el handler CLI `analyse <item> flag-pending --reason <motivo>` (escribe `state = PendingUserDecision`, `pending_reason`) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T004, T017). Nota de implementación: la sintaxis final es `learnkit analyse flag-pending <item_id> --reason <motivo> [--session <id>] [--json]` (verbo antes que `item_id` posicional, en vez del orden documentado en `contracts/cli-commands.md`) — necesario porque `summary`/`mindmap`/`page` ya son subcomandos clap fijos con su propia semántica (`set`/`add`), y `item_id` es dinámico (`page-<n>`); ver el módulo doc de `analyse.rs`.
+- [X] T026 [US3] Implementar el handler CLI `analyse <item> skip --reason <motivo>` (escribe `resolution = {kind: "skipped", reason}`, deja de bloquear fases dependientes para ese elemento) en `crates/learnkit-cli/src/commands/analyse.rs` (depende de T025). Misma nota de sintaxis: `learnkit analyse skip <item_id> --reason <motivo> [--session <id>] [--json]`.
 
 **Checkpoint**: User Stories 1-3 funcionan de forma independiente — ningún hueco de material bloquea en seco ni se completa en silencio.
 
