@@ -109,6 +109,7 @@ pub fn run_inventory(args: InventoryArgs) -> i32 {
                 output_fingerprint: fingerprint,
                 validated_at: format!("{:?}", SystemTime::now()),
                 result: PhaseResult::Valid,
+                checklist: None,
             };
             let _ = write_manifest(&paths.phase_manifest("inventory"), &manifest);
 
