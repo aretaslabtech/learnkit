@@ -38,7 +38,7 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 **Purpose**: fixture de material con un hueco deliberado, necesaria para probar la detección/relleno de huecos (FR-006) sin depender de contenido real de clase.
 
-- [ ] T001 [P] Crear `tests/fixtures/analyse-sample/` con un fichero de notas Markdown de ejemplo que mencione un concepto sin explicarlo (para US2/FR-006) y documentar en un `README.md` del propio directorio que la validación con contenido real de clase se hace siguiendo `quickstart.md`.
+- [X] T001 [P] Crear `tests/fixtures/analyse-sample/` con un fichero de notas Markdown de ejemplo que mencione un concepto sin explicarlo (para US2/FR-006) y documentar en un `README.md` del propio directorio que la validación con contenido real de clase se hace siguiendo `quickstart.md`.
 
 ---
 
@@ -48,11 +48,11 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 **⚠️ CRITICAL**: no empezar Phase 3+ sin terminar esta fase.
 
-- [ ] T002 Añadir `ChecklistItemManifest` (`item_id`, `state: Pending|Done|Blocked|PendingUserDecision`, `input_fingerprint`, `pending_reason`, `resolution`) y el campo `checklist: Option<Vec<ChecklistItemManifest>>` (`#[serde(default)]`, compatible hacia atrás) a `PhaseManifest`, más la variante `PhaseState::NeedsUserInput`, en `crates/learnkit-workflow/src/engine.rs`, según `data-model.md` → PhaseManifest/ChecklistItemManifest y `research.md` §1 (sin dependencias).
-- [ ] T003 Implementar la derivación del estado agregado de una fase con checklist (`Valid` solo si todos los elementos son `Done`; `NeedsUserInput` si alguno es `PendingUserDecision` y ninguno `Failed`; `Blocked` si la fase de la que depende no es `Valid`) dentro de `recompute_state` en `crates/learnkit-workflow/src/engine.rs` (depende de T002).
-- [ ] T004 Implementar los helpers de lectura/escritura de un elemento de checklist individual (`write_checklist_item`, `read_checklist`, invalidación cuando su `input_fingerprint` cambia) en `crates/learnkit-workflow/src/engine.rs` (depende de T002).
-- [ ] T005 [P] Registrar la fase `analyse` con checklist vacío inicial (`requires = ["inventory"]`) en `crates/learnkit-workflow/src/phases.rs`, sustituyendo el nodo opaco actual que solo conecta con `vocabulary` (depende de T002).
-- [ ] T006 [P] Registrar la fase `consolidate` (`requires = ["analyse"]`, sin checklist propio) en `crates/learnkit-workflow/src/phases.rs` — hoy no existe en el código pese a estar nombrada en `docs/05-cli-spec.md` (depende de T002).
+- [X] T002 Añadir `ChecklistItemManifest` (`item_id`, `state: Pending|Done|Blocked|PendingUserDecision`, `input_fingerprint`, `pending_reason`, `resolution`) y el campo `checklist: Option<Vec<ChecklistItemManifest>>` (`#[serde(default)]`, compatible hacia atrás) a `PhaseManifest`, más la variante `PhaseState::NeedsUserInput`, en `crates/learnkit-workflow/src/engine.rs`, según `data-model.md` → PhaseManifest/ChecklistItemManifest y `research.md` §1 (sin dependencias).
+- [X] T003 Implementar la derivación del estado agregado de una fase con checklist (`Valid` solo si todos los elementos son `Done`; `NeedsUserInput` si alguno es `PendingUserDecision` y ninguno `Failed`; `Blocked` si la fase de la que depende no es `Valid`) dentro de `recompute_state` en `crates/learnkit-workflow/src/engine.rs` (depende de T002).
+- [X] T004 Implementar los helpers de lectura/escritura de un elemento de checklist individual (`write_checklist_item`, `read_checklist`, invalidación cuando su `input_fingerprint` cambia) en `crates/learnkit-workflow/src/engine.rs` (depende de T002).
+- [X] T005 [P] Registrar la fase `analyse` con checklist vacío inicial (`requires = ["inventory"]`) en `crates/learnkit-workflow/src/phases.rs`, sustituyendo el nodo opaco actual que solo conecta con `vocabulary` (depende de T002).
+- [X] T006 [P] Registrar la fase `consolidate` (`requires = ["analyse"]`, sin checklist propio) en `crates/learnkit-workflow/src/phases.rs` — hoy no existe en el código pese a estar nombrada en `docs/05-cli-spec.md` (depende de T002).
 
 **Checkpoint**: el motor de fases soporta checklist de forma genérica; las historias de usuario pueden implementarse.
 
