@@ -5,8 +5,7 @@
 
 use assert_cmd::Command;
 use learnkit_workflow::engine::{
-    read_manifest, write_checklist_item, write_manifest, ChecklistItemManifest,
-    ChecklistItemState,
+    read_manifest, write_checklist_item, write_manifest, ChecklistItemManifest, ChecklistItemState,
 };
 
 fn learnkit() -> Command {
@@ -116,10 +115,7 @@ fn checklist_item(
 
 /// Runs `learnkit status --session <id> --json` and returns the `analyse`
 /// entry of the `phases` array.
-fn analyse_phase_json(
-    project_root: &std::path::Path,
-    session_id: &str,
-) -> serde_json::Value {
+fn analyse_phase_json(project_root: &std::path::Path, session_id: &str) -> serde_json::Value {
     let out = learnkit()
         .arg("status")
         .arg("--path")

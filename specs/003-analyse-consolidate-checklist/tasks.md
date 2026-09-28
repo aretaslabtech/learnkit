@@ -154,10 +154,10 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 **Purpose**: mejoras que afectan a varias historias de usuario.
 
-- [ ] T035 [P] Ejecutar los 4 escenarios + el escenario de bloqueo de `quickstart.md` (con contenido de fixture, sin agente real) y corregir cualquier discrepancia encontrada.
-- [ ] T036 Implementar el formateo de salida legible por humanos para los comandos nuevos (`analyse summary/mindmap/page/flag-pending/skip`, `consolidate`, `consolidate list`) en `crates/learnkit-cli/src/commands/analyse.rs` y `crates/learnkit-cli/src/commands/consolidate.rs`.
-- [ ] T037 [P] Pasar `cargo fmt --all` y `cargo clippy --workspace --all-targets` sobre los ficheros tocados y corregir cualquier warning.
-- [ ] T038 [P] Actualizar `docs/05-cli-spec.md` (comandos `analyse`/`consolidate` ya no son nombres sueltos) y `docs/04-workflow-guards.md` (checklist por fase, estado `NeedsUserInput`) para reflejar el diseño real, siguiendo la misma convención "spec antes que código" ya aplicada al resto del proyecto.
+- [X] T035 [P] Ejecutar los 4 escenarios + el escenario de bloqueo de `quickstart.md` (con contenido de fixture, sin agente real) y corregir cualquier discrepancia encontrada.
+- [X] T036 Implementar el formateo de salida legible por humanos para los comandos nuevos (`analyse summary/mindmap/page/flag-pending/skip`, `consolidate`, `consolidate list`) en `crates/learnkit-cli/src/commands/analyse.rs` y `crates/learnkit-cli/src/commands/consolidate.rs`.
+- [X] T037 [P] Pasar `cargo fmt --all` y `cargo clippy --workspace --all-targets` sobre los ficheros tocados y corregir cualquier warning.
+- [X] T038 [P] Actualizar `docs/05-cli-spec.md` (comandos `analyse`/`consolidate` ya no son nombres sueltos) y `docs/04-workflow-guards.md` (checklist por fase, estado `NeedsUserInput`) para reflejar el diseño real, siguiendo la misma convención "spec antes que código" ya aplicada al resto del proyecto.
 
 ---
 

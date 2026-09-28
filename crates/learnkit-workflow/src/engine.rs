@@ -179,7 +179,10 @@ pub fn recompute_state(
 /// — the phase's own dependency-blocking is handled by the caller
 /// (`recompute_state`) before this is ever reached.
 fn recompute_checklist_aggregate_state(items: &[ChecklistItemManifest]) -> PhaseState {
-    if items.iter().all(|item| item.state == ChecklistItemState::Done) {
+    if items
+        .iter()
+        .all(|item| item.state == ChecklistItemState::Done)
+    {
         return PhaseState::Valid;
     }
     if items
@@ -271,7 +274,10 @@ pub fn write_checklist_item(
     });
 
     let items = manifest.checklist.get_or_insert_with(Vec::new);
-    match items.iter_mut().find(|existing| existing.item_id == item.item_id) {
+    match items
+        .iter_mut()
+        .find(|existing| existing.item_id == item.item_id)
+    {
         Some(existing) => *existing = item,
         None => items.push(item),
     }
@@ -437,24 +443,14 @@ mod tests {
             checklist_item("summary", ChecklistItemState::Done, "fp1"),
             checklist_item("mindmap", ChecklistItemState::Done, "fp1"),
         ]);
-        let state = recompute_state(
-            &["inventory".to_string()],
-            &deps,
-            Some(&all_done),
-            "fp1",
-        );
+        let state = recompute_state(&["inventory".to_string()], &deps, Some(&all_done), "fp1");
         assert_eq!(state, PhaseState::Valid);
 
         let one_pending = manifest_with_checklist(vec![
             checklist_item("summary", ChecklistItemState::Done, "fp1"),
             checklist_item("mindmap", ChecklistItemState::Pending, "fp1"),
         ]);
-        let state = recompute_state(
-            &["inventory".to_string()],
-            &deps,
-            Some(&one_pending),
-            "fp1",
-        );
+        let state = recompute_state(&["inventory".to_string()], &deps, Some(&one_pending), "fp1");
         assert_ne!(state, PhaseState::Valid);
     }
 

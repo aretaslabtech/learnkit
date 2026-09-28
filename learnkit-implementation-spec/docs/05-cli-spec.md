@@ -106,6 +106,30 @@ learnkit run --until validate --session <id>
 
 `run --until` ejecuta dependencias en orden topológico y se detiene ante el primer guard fallido.
 
+## 7.1 Análisis (`analyse`) y consolidación (`consolidate`)
+
+`analyse` no es un paso "todo o nada" como las fases anteriores: es una fase con checklist (`docs/04-workflow-guards.md §4.1`) que se va completando elemento a elemento, normalmente invocada por el agente a través de la Skill `learnkit-analyse`. Cada subcomando confirma o resuelve un elemento (`summary`, `mindmap`, o `page-<n>`, uno por cada `analyse page add`):
+
+```bash
+learnkit analyse summary set --session <id> --file resumen.md [--filled-gap "<concepto>:<nota>"]... [--force]
+learnkit analyse mindmap set --session <id> --file mapa.md [--force]
+learnkit analyse page add --session <id> --concept "<texto>" --file pagina.md
+
+learnkit analyse flag-pending <item_id> --session <id> --reason "<motivo>"
+learnkit analyse skip <item_id> --session <id> --reason "<motivo>"
+```
+
+`<item_id>` en `flag-pending`/`skip` es un argumento posicional (`summary`, `mindmap`, o `page-<n>`), no un subcommand anidado bajo `summary`/`mindmap`/`page`. `summary set` y `mindmap set` son idempotentes por fingerprint de fuentes (no-op si el elemento ya está `done` con las mismas fuentes, salvo `--force`); `flag-pending` deja el elemento en `pending_user_decision` con un motivo visible en `status`, sin bloquear el resto del checklist; `skip` lo resuelve explícitamente sin contenido real, de forma auditada.
+
+`consolidate` (`requires = [analyse]`) deriva candidatos de vocabulario del resumen/páginas ya confirmados, los deduplica contra el vocabulario ya persistido, y los persiste:
+
+```bash
+learnkit consolidate --session <id> [--json]
+learnkit consolidate list --session <id> [--json]
+```
+
+Si algún elemento de `analyse` sigue `pending_user_decision`, `consolidate` falla con exit `20` y `"code": "BLOCKED"` (§14) en vez de consolidar con datos incompletos; `consolidate list` reexpone los candidatos ya persistidos, incluyendo `already_exists`/`existing_vocabulary_id` para los que ya tenían una entrada de vocabulario equivalente. Contrato completo: `specs/003-analyse-consolidate-checklist/contracts/cli-commands.md`.
+
 ## 8. Tarjetas
 
 ```bash

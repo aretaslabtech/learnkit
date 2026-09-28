@@ -196,9 +196,7 @@ fn run_summary_set(args: SummarySetArgs) -> i32 {
 
     if !args.force {
         match item_already_done(session_paths.root(), "summary", &fingerprint) {
-            Ok(true) => {
-                return emit_ok(args.json, "ANALYSE_SUMMARY_SET", "summary", "done", true)
-            }
+            Ok(true) => return emit_ok(args.json, "ANALYSE_SUMMARY_SET", "summary", "done", true),
             Ok(false) => {}
             Err(err) => return emit_error(args.json, err),
         }
@@ -274,9 +272,7 @@ fn run_mindmap_set(args: MindmapSetArgs) -> i32 {
 
     if !args.force {
         match item_already_done(session_paths.root(), "mindmap", &fingerprint) {
-            Ok(true) => {
-                return emit_ok(args.json, "ANALYSE_MINDMAP_SET", "mindmap", "done", true)
-            }
+            Ok(true) => return emit_ok(args.json, "ANALYSE_MINDMAP_SET", "mindmap", "done", true),
             Ok(false) => {}
             Err(err) => return emit_error(args.json, err),
         }
@@ -335,19 +331,20 @@ fn run_page_add(args: PageAddArgs) -> i32 {
     // Each call creates a brand new, independent checklist element (Edge
     // Case of spec.md) — no idempotency/`--force` here, unlike
     // `summary`/`mindmap`.
-    let page = match analysis::add_concept_page(&root, &session_id, &args.concept, &content, &fingerprint)
-    {
-        Ok(p) => p,
-        Err(source) => {
-            return emit_error(
-                args.json,
-                LearnKitError::Filesystem {
-                    path: root.display().to_string(),
-                    source,
-                },
-            )
-        }
-    };
+    let page =
+        match analysis::add_concept_page(&root, &session_id, &args.concept, &content, &fingerprint)
+        {
+            Ok(p) => p,
+            Err(source) => {
+                return emit_error(
+                    args.json,
+                    LearnKitError::Filesystem {
+                        path: root.display().to_string(),
+                        source,
+                    },
+                )
+            }
+        };
 
     if let Err(err) = confirm_item(session_paths.root(), &page.id, &fingerprint) {
         return emit_error(args.json, err);
@@ -497,7 +494,11 @@ fn validate_item_id(session_root: &Path, item_id: &str) -> Result<(), LearnKitEr
         let requested: Option<u32> = rest.parse().ok().filter(|n| *n > 0);
         let next_expected = checklist
             .iter()
-            .filter_map(|item| item.item_id.strip_prefix("page-").and_then(|n| n.parse::<u32>().ok()))
+            .filter_map(|item| {
+                item.item_id
+                    .strip_prefix("page-")
+                    .and_then(|n| n.parse::<u32>().ok())
+            })
             .max()
             .unwrap_or(0)
             + 1;
@@ -590,7 +591,11 @@ fn item_already_done(
         .unwrap_or(false))
 }
 
-fn confirm_item(session_root: &Path, item_id: &str, fingerprint: &str) -> Result<(), LearnKitError> {
+fn confirm_item(
+    session_root: &Path,
+    item_id: &str,
+    fingerprint: &str,
+) -> Result<(), LearnKitError> {
     write_checklist_item(
         session_root,
         "analyse",

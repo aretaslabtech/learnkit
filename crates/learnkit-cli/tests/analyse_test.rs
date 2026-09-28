@@ -228,8 +228,16 @@ fn analyse_page_add_creates_independent_items_in_any_order() {
     let content_dir = tempfile::tempdir().unwrap();
     let session_id = new_session_with_notes(project.path());
 
-    let page1_file = write_content_file(content_dir.path(), "page1.md", "Explicación del concepto A.");
-    let page2_file = write_content_file(content_dir.path(), "page2.md", "Explicación del concepto B.");
+    let page1_file = write_content_file(
+        content_dir.path(),
+        "page1.md",
+        "Explicación del concepto A.",
+    );
+    let page2_file = write_content_file(
+        content_dir.path(),
+        "page2.md",
+        "Explicación del concepto B.",
+    );
     let mindmap_file = write_content_file(content_dir.path(), "mindmap.md", "- nodo 1\n- nodo 2");
 
     let out1 = learnkit()
@@ -413,7 +421,8 @@ fn analyse_summary_set_is_idempotent_and_force_reruns_it() {
     assert_eq!(second_json["already_done"], true);
 
     // A different file's content is ignored by the no-op path unless forced.
-    let updated_file = write_content_file(content_dir.path(), "summary2.md", "Resumen actualizado.");
+    let updated_file =
+        write_content_file(content_dir.path(), "summary2.md", "Resumen actualizado.");
     let noop_with_new_file = learnkit()
         .arg("analyse")
         .arg("summary")
@@ -457,9 +466,10 @@ fn analyse_summary_set_is_idempotent_and_force_reruns_it() {
         .clone();
     let forced_json: serde_json::Value = serde_json::from_slice(&forced).unwrap();
     assert_eq!(forced_json["already_done"], false);
-    let persisted_after_force = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
-        .unwrap()
-        .unwrap();
+    let persisted_after_force =
+        learnkit_workflow::analysis::read_summary(project.path(), &session_id)
+            .unwrap()
+            .unwrap();
     assert_eq!(persisted_after_force.content, "Resumen actualizado.");
 }
 
@@ -563,7 +573,11 @@ fn analyse_flag_pending_rejects_unknown_page_item() {
     let session_id = new_session_with_notes(project.path());
 
     // Only `page-1` exists so far; `page-3` must be rejected.
-    let page1_file = write_content_file(content_dir.path(), "page1.md", "Explicación del concepto A.");
+    let page1_file = write_content_file(
+        content_dir.path(),
+        "page1.md",
+        "Explicación del concepto A.",
+    );
     learnkit()
         .arg("analyse")
         .arg("page")
@@ -630,7 +644,8 @@ fn analyse_set_after_flag_pending_clears_pending_state() {
     let session_id = new_session_with_notes(project.path());
 
     // Confirm `summary` first — must survive untouched throughout.
-    let summary_file = write_content_file(content_dir.path(), "summary.md", "Resumen ya confirmado.");
+    let summary_file =
+        write_content_file(content_dir.path(), "summary.md", "Resumen ya confirmado.");
     learnkit()
         .arg("analyse")
         .arg("summary")
@@ -683,7 +698,10 @@ fn analyse_set_after_flag_pending_clears_pending_state() {
         .success();
 
     let analyse_after = analyse_phase(project.path(), &session_id);
-    assert_eq!(checklist_item_state(&analyse_after, "mindmap"), Some("done"));
+    assert_eq!(
+        checklist_item_state(&analyse_after, "mindmap"),
+        Some("done")
+    );
     let mindmap_item = analyse_after["checklist"]
         .as_array()
         .unwrap()
@@ -693,7 +711,10 @@ fn analyse_set_after_flag_pending_clears_pending_state() {
     assert!(mindmap_item["pending_reason"].is_null());
 
     // `summary`'s already-done work was not repeated/disturbed.
-    assert_eq!(checklist_item_state(&analyse_after, "summary"), Some("done"));
+    assert_eq!(
+        checklist_item_state(&analyse_after, "summary"),
+        Some("done")
+    );
     let persisted_summary = learnkit_workflow::analysis::read_summary(project.path(), &session_id)
         .unwrap()
         .unwrap();
@@ -754,7 +775,10 @@ fn analyse_skip_resolves_pending_item_and_status_does_not_re_show_pending() {
     // A later, independent `status` query must not show it as
     // `pending_user_decision` again.
     let analyse_again = analyse_phase(project.path(), &session_id);
-    assert_eq!(checklist_item_state(&analyse_again, "mindmap"), Some("done"));
+    assert_eq!(
+        checklist_item_state(&analyse_again, "mindmap"),
+        Some("done")
+    );
     let mindmap_item = analyse_again["checklist"]
         .as_array()
         .unwrap()

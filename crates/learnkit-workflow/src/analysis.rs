@@ -126,7 +126,7 @@ pub fn list_concept_pages(
         let page: ConceptPage = serde_yaml::from_str(&raw).map_err(to_io_err)?;
         pages.push(page);
     }
-    pages.sort_by(|a, b| page_number(&a.id).cmp(&page_number(&b.id)));
+    pages.sort_by_key(|p| page_number(&p.id));
     Ok(pages)
 }
 
@@ -163,7 +163,12 @@ pub fn add_concept_page(
     source_fingerprint: &str,
 ) -> std::io::Result<ConceptPage> {
     let existing = list_concept_pages(project_root, session_id)?;
-    let next_n = existing.iter().map(|p| page_number(&p.id)).max().unwrap_or(0) + 1;
+    let next_n = existing
+        .iter()
+        .map(|p| page_number(&p.id))
+        .max()
+        .unwrap_or(0)
+        + 1;
 
     let page = ConceptPage {
         id: format!("page-{next_n}"),

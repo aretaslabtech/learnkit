@@ -357,15 +357,18 @@ fn emit_candidates(json: bool, code: &str, candidates: &[ConsolidatedCandidate])
         println!("(sin candidatos consolidados)");
     } else {
         for c in &reports {
-            println!(
-                "{}\t{}\talready_exists={}\texisting_vocabulary_id={}\torigin={}",
-                c.id,
-                c.text,
-                c.already_exists,
-                c.existing_vocabulary_id.as_deref().unwrap_or("-"),
-                c.source_ref.origin
-            );
+            match (c.already_exists, &c.existing_vocabulary_id) {
+                (true, Some(existing_id)) => println!(
+                    "  - {} \"{}\" [origen: {}] — ya existe en vocabulario ({})",
+                    c.id, c.text, c.source_ref.origin, existing_id
+                ),
+                _ => println!(
+                    "  - {} \"{}\" [origen: {}]",
+                    c.id, c.text, c.source_ref.origin
+                ),
+            }
         }
+        println!("{} candidato(s) consolidado(s).", reports.len());
     }
     0
 }
@@ -394,11 +397,15 @@ fn emit_blocked(json: bool, pending: &[ChecklistItemManifest]) -> i32 {
         )
         .print_json();
     } else {
-        let ids: Vec<&str> = pending.iter().map(|item| item.item_id.as_str()).collect();
         eprintln!(
-            "Error: consolidate bloqueado — elemento(s) de 'analyse' pendientes de decisión: {}",
-            ids.join(", ")
+            "Error: consolidate bloqueado — elemento(s) de 'analyse' pendientes de decisión:"
         );
+        for item in pending {
+            match &item.pending_reason {
+                Some(reason) => eprintln!("  - {}: {}", item.item_id, reason),
+                None => eprintln!("  - {}", item.item_id),
+            }
+        }
     }
 
     LearnKitError::GuardBlocked {

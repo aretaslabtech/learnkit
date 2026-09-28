@@ -155,20 +155,23 @@ fn session_phase_statuses(project_root: &Path, session_id: &str) -> Vec<PhaseSta
         // fingerprint exists yet (that lands with real per-item fingerprints
         // in a later task), so this reuses the phase-level
         // `current_input_fingerprint` already computed above.
-        let checklist = manifest.as_ref().and_then(|m| m.checklist.as_ref()).map(|items| {
-            items
-                .iter()
-                .map(|item| {
-                    let live_state =
-                        recompute_checklist_item_state(item, &current_input_fingerprint);
-                    ChecklistItemStatus {
-                        item_id: item.item_id.clone(),
-                        state: state_code(&live_state),
-                        pending_reason: item.pending_reason.clone(),
-                    }
-                })
-                .collect()
-        });
+        let checklist = manifest
+            .as_ref()
+            .and_then(|m| m.checklist.as_ref())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| {
+                        let live_state =
+                            recompute_checklist_item_state(item, &current_input_fingerprint);
+                        ChecklistItemStatus {
+                            item_id: item.item_id.clone(),
+                            state: state_code(&live_state),
+                            pending_reason: item.pending_reason.clone(),
+                        }
+                    })
+                    .collect()
+            });
         states.insert(def.id.clone(), state);
         ordered.push(PhaseStatus {
             phase: def.id.clone(),

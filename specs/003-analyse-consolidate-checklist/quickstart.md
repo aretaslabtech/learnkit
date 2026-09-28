@@ -15,14 +15,18 @@ Valida las 4 historias de usuario en orden. Cada bloque es un incremento comprob
 ```bash
 learnkit status --session <session_id> --json
 # Esperado (sesión recién inventariada, analyse todavía no iniciada):
-# la fase "analyse" aparece con checklist: [] o con los 3 elementos en "pending".
+# la fase "analyse" no lleva "checklist" todavía — el array se va poblando
+# elemento a elemento a medida que cada comando de `analyse` lo confirma o
+# lo resuelve (no hay un "summary"/"mindmap" placeholder en "pending" antes
+# de tocarlo).
 
 # Confirmar solo el resumen (ver Escenario 2 para el detalle del comando):
 learnkit analyse summary set --session <session_id> --file resumen.md
 
 learnkit status --session <session_id> --json
-# Esperado: checklist muestra "summary": "done", "mindmap": "pending", sin páginas
-# todavía — no un único estado agregado para toda la fase "analyse".
+# Esperado: checklist muestra solo "summary": "done" — "mindmap" y las
+# páginas aún no aparecen porque todavía no se ha actuado sobre ellas, no
+# un único estado agregado para toda la fase "analyse".
 ```
 
 ## Escenario 2 — Resumen, mapa mental y páginas (User Story 2)
@@ -52,19 +56,22 @@ learnkit analyse summary set --session <session_id> --file resumen.md
 ## Escenario 3 — Elemento pendiente de decisión del usuario (User Story 3)
 
 ```bash
-# Con una sesión cuyo material no basta para un mapa mental útil:
-learnkit analyse mindmap flag-pending --session <session_id> --reason "el material no tiene contenido suficiente para un mapa mental útil"
+# Con una sesión cuyo material no basta para un mapa mental útil.
+# `flag-pending`/`skip` toman el item_id como argumento posicional — no como
+# subcomando de `summary`/`mindmap`/`page`:
+learnkit analyse flag-pending mindmap --session <session_id> --reason "el material no tiene contenido suficiente para un mapa mental útil"
 
 learnkit status --session <session_id> --json
-# Esperado: "mindmap": {"state": "pending_user_decision", "reason": "..."},
-# mientras "summary" sigue su curso normal en paralelo.
+# Esperado: el elemento "mindmap" del checklist trae
+# "state": "pending_user_decision", "pending_reason": "...", mientras
+# "summary" sigue su curso normal en paralelo.
 
 # Resolución A: aportar más material y confirmar normalmente
 learnkit analyse mindmap set --session <session_id> --file mapa-completo.md
 # Esperado: pasa a "done", el estado pendiente desaparece.
 
 # Resolución B (sesión distinta): omitir explícitamente
-learnkit analyse mindmap skip --session <session_id> --reason "esta clase no tiene contenido jerarquizable"
+learnkit analyse skip mindmap --session <session_id> --reason "esta clase no tiene contenido jerarquizable"
 # Esperado: deja de bloquear "consolidate"; volver a consultar status no
 # vuelve a preguntar por este elemento mientras el material no cambie.
 ```
