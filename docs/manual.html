@@ -134,15 +134,17 @@
   <li><a href="#s2">Inicializar un proyecto</a></li>
   <li><a href="#s3">Crear una sesión de clase</a></li>
   <li><a href="#s4">Transcribir el audio</a></li>
-  <li><a href="#s5">Añadir vocabulario</a></li>
-  <li><a href="#s6">Generar tarjetas</a></li>
-  <li><a href="#s7">Exportar a Anki</a></li>
-  <li><a href="#s8">Generar y hacer un examen</a></li>
-  <li><a href="#s9">Ver tu progreso</a></li>
-  <li><a href="#s10">Usar un agente (Claude/Codex) para sugerir vocabulario</a></li>
-  <li><a href="#s11">Referencia de comandos</a></li>
-  <li><a href="#s12">Solución de problemas</a></li>
-  <li><a href="#s13">Qué no hace (todavía) LearnKit</a></li>
+  <li><a href="#s5">Analizar la sesión (resumen, mapa mental, páginas)</a></li>
+  <li><a href="#s6">Consolidar candidatos de vocabulario</a></li>
+  <li><a href="#s7">Añadir vocabulario</a></li>
+  <li><a href="#s8">Generar tarjetas</a></li>
+  <li><a href="#s9">Exportar a Anki</a></li>
+  <li><a href="#s10">Generar y hacer un examen</a></li>
+  <li><a href="#s11">Ver tu progreso</a></li>
+  <li><a href="#s12">Usar un agente (Claude/Codex) para sugerir vocabulario</a></li>
+  <li><a href="#s13">Referencia de comandos</a></li>
+  <li><a href="#s14">Solución de problemas</a></li>
+  <li><a href="#s15">Qué no hace (todavía) LearnKit</a></li>
 </ol>
 </nav>
 
@@ -150,7 +152,7 @@
 <pre><code>cargo install --path crates/learnkit-cli</code></pre>
 <p>Esto compila e instala <code>learnkit</code> en <code>~/.cargo/bin</code> (en Windows: <code>%USERPROFILE%\.cargo\bin</code>), que normalmente ya está en tu <code>PATH</code> si instalaste Rust con <code>rustup</code>. A partir de aquí puedes llamar a <code>learnkit</code> desde cualquier carpeta, no solo desde dentro de este repositorio.</p>
 <p>Si solo quieres compilarlo sin instalarlo (por ejemplo, para desarrollo), usa <code>cargo build --release</code>; el binario queda en <code>target/release/learnkit</code> (<code>.exe</code> en Windows) pero solo es accesible con la ruta completa.</p>
-<p>Requisito: toolchain de Rust estable. Nada más es obligatorio para este primer paso — whisper.cpp, Piper y la red solo hacen falta para pasos concretos más adelante (ver <a href="#s12">§12</a>).</p>
+<p>Requisito: toolchain de Rust estable. Nada más es obligatorio para este primer paso — whisper.cpp, Piper y la red solo hacen falta para pasos concretos más adelante (ver <a href="#s14">§14</a>).</p>
 
 <h2 id="s2">2. Inicializar un proyecto</h2>
 <pre><code>learnkit init --profile language --agents claude</code></pre>
@@ -179,7 +181,84 @@ learnkit inventory --session &lt;session_id&gt;</code></pre>
 <p>Puedes comprobar qué ve LearnKit de tu sesión (notas + segmentos de transcripción) con:</p>
 <pre><code>learnkit session show &lt;session_id&gt; --json</code></pre>
 
-<h2 id="s5">5. Añadir vocabulario</h2>
+<h2 id="s5">5. Analizar la sesión (resumen, mapa mental, páginas)</h2>
+<p>Antes de sacar vocabulario o tarjetas, LearnKit analiza la sesión: convierte las notas y la transcripción en un <strong>resumen</strong>, un <strong>mapa mental</strong> de repaso rápido y una o más <strong>páginas de concepto</strong>. LearnKit (el binario Rust) no redacta nada por su cuenta — quien redacta es un agente (Claude/Codex) a través de la Skill <code>learnkit-analyse</code>, que lee el material de la sesión, y la CLI solo valida la estructura/trazabilidad de lo que confirmas y lo persiste.</p>
+<p>En la práctica, pídele a tu agente "analiza la sesión <code>&lt;session_id&gt;</code>" y deja que confirme cada elemento con estos comandos (puedes ejecutarlos tú mismo si prefieres redactar a mano):</p>
+<pre><code>learnkit analyse summary set --session &lt;session_id&gt; --file resumen.md
+learnkit analyse mindmap set --session &lt;session_id&gt; --file mapa.md
+learnkit analyse page add --session &lt;session_id&gt; --concept "layover" --file pagina-layover.md</code></pre>
+<p>Ejemplo real (fichero <code>resumen.md</code> con un resumen corto de una clase de vocabulario de viaje):</p>
+<pre><code>$ learnkit analyse summary set --session vocabulario-de-viaje-ae7c5e71 --file resumen.md --json
+{
+  "ok": true,
+  "code": "ANALYSE_SUMMARY_SET",
+  "item_id": "summary",
+  "state": "done",
+  "already_done": false
+}</code></pre>
+<ul>
+  <li><code>summary set</code> produce el elemento <code>summary</code> del checklist de <code>analyse</code>: qué se trabajó, conceptos importantes, reglas, ejemplos a conservar, errores a repasar y vocabulario a estudiar.</li>
+  <li><code>mindmap set</code> produce <code>mindmap</code>: un esquema de repaso rápido, distinto en forma del resumen (LearnKit rechaza un mapa mental idéntico al resumen).</li>
+  <li><code>page add</code> produce un elemento <code>page-&lt;n&gt;</code> por cada página de concepto (una idea concentrada, trazable al material de origen); puedes llamarlo varias veces para añadir varias páginas.</li>
+  <li>Si el material menciona un concepto pero no lo explica, el agente puede rellenar ese hueco con su propio conocimiento, pero debe declararlo con <code>--filled-gap "&lt;concepto&gt;:&lt;nota&gt;"</code> en <code>summary set</code> — nunca mezclarlo sin marcar con lo que sí viene del material original.</li>
+  <li>Repetir un comando sin cambios en el material de origen no regenera nada (<code>already_done: true</code> en la respuesta) — es idempotente, igual que <code>cards build</code>.</li>
+</ul>
+<p>Consulta el resultado con <code>learnkit status --session &lt;session_id&gt; --json</code>: cada elemento del checklist de <code>analyse</code> aparece por separado, no como un único estado agregado de la fase:</p>
+<pre><code>{
+  "checklist": [
+    { "item_id": "summary", "state": "done" },
+    { "item_id": "mindmap", "state": "done" },
+    { "item_id": "page-1", "state": "done" }
+  ],
+  "phase": "analyse"
+}</code></pre>
+<h3>Cuando falta material: <code>flag-pending</code> y <code>skip</code></h3>
+<p>Si el material de la sesión no basta para completar un elemento concreto (por ejemplo, no hay contenido suficiente para un mapa mental útil), márcalo explícitamente en vez de inventar contenido pobre:</p>
+<pre><code>learnkit analyse flag-pending mindmap --session &lt;session_id&gt; --reason "el material no tiene contenido suficiente para un mapa mental util"</code></pre>
+<p>El elemento pasa a <code>pending_user_decision</code> con el motivo guardado, y el resto de elementos (por ejemplo <code>summary</code>) sigue su curso normal en paralelo. Puedes resolverlo de dos formas:</p>
+<ul>
+  <li><strong>Aportando el material que faltaba</strong> y confirmando normalmente: <code>learnkit analyse mindmap set --session &lt;session_id&gt; --file mapa-completo.md</code> — pasa a <code>done</code> y el estado pendiente desaparece.</li>
+  <li><strong>Omitiéndolo explícitamente</strong>, cuando de verdad no aplica a esa sesión:</li>
+</ul>
+<pre><code>learnkit analyse skip mindmap --session &lt;session_id&gt; --reason "esta clase no tiene contenido jerarquizable"</code></pre>
+<p><code>flag-pending</code> y <code>skip</code> toman el <code>item_id</code> (<code>summary</code>, <code>mindmap</code> o <code>page-&lt;n&gt;</code>) como argumento <strong>después</strong> del verbo, no como subcomando de <code>summary</code>/<code>mindmap</code>/<code>page</code>. Una vez resuelto (confirmado o <code>skip</code>), deja de bloquear los pasos posteriores (como <code>consolidate</code>, ver <a href="#s6">§6</a>) y no se vuelve a preguntar mientras el material no cambie.</p>
+
+<h2 id="s6">6. Consolidar candidatos de vocabulario</h2>
+<p>Una vez analizada la sesión, <code>consolidate</code> deriva candidatos de vocabulario del resumen y las páginas de concepto, y comprueba cada uno contra el vocabulario ya persistido (mismo mecanismo de deduplicación por lema que <code>learn vocabulary add</code>, <a href="#s7">§7</a>) para no repetir lo que ya tienes registrado de sesiones anteriores.</p>
+<pre><code>$ learnkit consolidate --session vocabulario-de-viaje-ae7c5e71 --json
+{
+  "ok": true,
+  "code": "CONSOLIDATE_DONE",
+  "candidates": [
+    { "id": "cand-1", "text": "vocabulario", "already_exists": false,
+      "source_ref": { "origin": "summary", "locator": "vocabulario" } },
+    { "id": "cand-4", "text": "layover", "already_exists": true,
+      "existing_vocabulary_id": "vocab-en-layover-7f3bf4",
+      "source_ref": { "origin": "summary", "locator": "layover" } },
+    { "id": "cand-5", "text": "boarding", "already_exists": false,
+      "source_ref": { "origin": "summary", "locator": "boarding" } }
+  ]
+}</code></pre>
+<ul>
+  <li><code>already_exists: true</code> + <code>existing_vocabulary_id</code> significa que ese candidato ya existe como entrada de vocabulario persistida (de esta sesión o de una anterior) — <strong>no se elimina del listado</strong>, solo se marca, para que sepas que ya lo tienes.</li>
+  <li>Cada candidato conserva <code>source_ref</code> (de qué elemento del análisis viene: <code>summary</code>, <code>mindmap</code> o <code>page-&lt;n&gt;</code>, y su localizador) — trazabilidad hasta el análisis de la sesión.</li>
+  <li><code>learnkit consolidate list --session &lt;session_id&gt; --json</code> reconsulta los candidatos ya persistidos para la sesión, sin volver a derivarlos.</li>
+  <li>Esta fase (por ahora) solo produce candidatos de <strong>vocabulario</strong> — no preguntas de gramática ni de conocimiento general (ver <a href="#s15">§15</a>).</li>
+</ul>
+<p>Si algún elemento de <code>analyse</code> sigue <code>pending_user_decision</code>, <code>consolidate</code> se bloquea explícitamente en vez de consolidar con datos incompletos:</p>
+<pre><code>$ learnkit consolidate --session clase-con-poco-material-d0bde9cd --json
+{
+  "ok": false,
+  "code": "BLOCKED",
+  "pending_items": [
+    { "item_id": "mindmap", "reason": "el material no tiene contenido suficiente para un mapa mental util" }
+  ]
+}
+$ echo $?
+20</code></pre>
+<p>El código de salida es <code>20</code>, y <code>pending_items</code> indica exactamente qué elemento de <code>analyse</code> falta por resolver (con <code>flag-pending</code>/<code>mindmap set</code> o <code>skip</code>, ver <a href="#s5">§5</a>).</p>
+
+<h2 id="s7">7. Añadir vocabulario</h2>
 <p>Confirma cada palabra o expresión que quieras estudiar:</p>
 <pre><code>learnkit learn vocabulary add \
   --session &lt;session_id&gt; \
@@ -191,10 +270,10 @@ learnkit inventory --session &lt;session_id&gt;</code></pre>
 <ul>
   <li><code>--source</code> debe ser un id que exista en el inventario de esa sesión (LearnKit lo valida y rechaza typos).</li>
   <li>Si la misma expresión ya existe de una sesión anterior, se reutiliza — no se duplica.</li>
-  <li><code>--suggested-by agent</code> en vez de <code>manual</code> si viene de una sugerencia de tu agente (ver <a href="#s10">§10</a>).</li>
+  <li><code>--suggested-by agent</code> en vez de <code>manual</code> si viene de una sugerencia de tu agente (ver <a href="#s12">§12</a>).</li>
 </ul>
 
-<h2 id="s6">6. Generar tarjetas</h2>
+<h2 id="s8">8. Generar tarjetas</h2>
 <pre><code>learnkit cards build --session &lt;session_id&gt;</code></pre>
 <p>Para cada palabra sin imagen/audio propio, LearnKit:</p>
 <ul>
@@ -205,12 +284,12 @@ learnkit inventory --session &lt;session_id&gt;</code></pre>
 <pre><code>learnkit cards validate --session &lt;session_id&gt; --json</code></pre>
 <p>Cada tarjeta aparece como <code>complete</code>, <code>pending_image</code> o <code>pending_audio</code>. Una tarjeta <code>pending_*</code> normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que Piper no está instalado — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).</p>
 
-<h2 id="s7">7. Exportar a Anki</h2>
+<h2 id="s9">9. Exportar a Anki</h2>
 <pre><code>learnkit export anki --session &lt;session_id&gt; --out dist/mi-mazo.apkg</code></pre>
 <p>Si alguna tarjeta no está <code>complete</code>, el comando falla explícitamente (código de salida <code>40</code>) indicando exactamente cuál y qué le falta — nunca genera un <code>.apkg</code> a medias.</p>
 <div class="callout">Importa <code>dist/mi-mazo.apkg</code> en Anki Desktop (<code>Archivo → Importar...</code>). <strong>Verificado</strong>: se importa correctamente, con imagen y audio en el lado que corresponda.</div>
 
-<h2 id="s8">8. Generar y hacer un examen</h2>
+<h2 id="s10">10. Generar y hacer un examen</h2>
 <pre><code>learnkit assessment build --session &lt;session_id&gt;
 learnkit export exam --assessment &lt;assessment_id&gt; --session &lt;session_id&gt; --out dist/examen.html</code></pre>
 <p><code>&lt;assessment_id&gt;</code> te lo devuelve <code>assessment build --json</code> (campo <code>assessment_id</code>).</p>
@@ -219,12 +298,12 @@ learnkit export exam --assessment &lt;assessment_id&gt; --session &lt;session_id
 <pre><code>learnkit attempt import ./results.json --assessment &lt;assessment_id&gt; --session &lt;session_id&gt;</code></pre>
 <p>Puedes repetir el examen y reimportar tantas veces como quieras — nunca se sobrescriben intentos anteriores.</p>
 
-<h2 id="s9">9. Ver tu progreso</h2>
+<h2 id="s11">11. Ver tu progreso</h2>
 <pre><code>learnkit progress
 learnkit progress --skill listening</code></pre>
 <p>Muestra precisión y número de intentos, agregados por elemento de vocabulario y por destreza (<code>recognition</code>/<code>production</code>/<code>listening</code>). Se recalcula siempre desde el historial real de intentos, nunca desde un valor guardado.</p>
 
-<h2 id="s10">10. Usar un agente (Claude/Codex) para sugerir vocabulario</h2>
+<h2 id="s12">12. Usar un agente (Claude/Codex) para sugerir vocabulario</h2>
 <p>Si instalaste la integración de Claude o Codex (<code>--agents</code> en el paso 2), tu agente tiene una Skill (<code>learnkit-language</code>) que:</p>
 <ol>
   <li>Lee <code>learnkit session show &lt;session_id&gt; --json</code> (tus notas + segmentos de transcripción).</li>
@@ -232,8 +311,9 @@ learnkit progress --skill listening</code></pre>
   <li><strong>Nunca</strong> los guarda por su cuenta — solo ejecuta <code>learn vocabulary add</code> cuando tú confirmas cada uno.</li>
 </ol>
 <p>En la práctica: simplemente pídele a tu agente "sugiéreme vocabulario de la sesión <code>&lt;session_id&gt;</code>" y sigue la conversación.</p>
+<p><code>--agents claude</code>/<code>codex</code> también instala una segunda Skill, <code>learnkit-analyse</code> (ver <a href="#s5">§5</a>), independiente de la anterior y no específica de idiomas: lee el material de la sesión, redacta el resumen/mapa mental/páginas de concepto, y los confirma con los comandos <code>learnkit analyse ...</code>. Cuando el material tiene un hueco (menciona algo sin explicarlo), lo rellena con su propio conocimiento pero lo declara con <code>--filled-gap</code>; cuando el material simplemente no basta para un elemento, usa <code>flag-pending</code> en vez de inventar contenido para que quedes tú quien decida (completarlo o <code>skip</code>). Pídele a tu agente "analiza la sesión <code>&lt;session_id&gt;</code>" para arrancar este flujo.</p>
 
-<h2 id="s11">11. Referencia de comandos</h2>
+<h2 id="s13">13. Referencia de comandos</h2>
 <table>
 <thead><tr><th>Comando</th><th>Qué hace</th></tr></thead>
 <tbody>
@@ -246,6 +326,13 @@ learnkit progress --skill listening</code></pre>
 <tr><td><code>learnkit inventory --session id</code></td><td>Inventaría (tipo, tamaño, hash) las fuentes de la sesión.</td></tr>
 <tr><td><code>learnkit transcribe --session id [--source id] [--model path]</code></td><td>Transcribe audio con whisper.cpp.</td></tr>
 <tr><td><code>learnkit transcribe import &lt;fichero&gt; --source id --session id</code></td><td>Importa una transcripción existente.</td></tr>
+<tr><td><code>learnkit analyse summary set --session id --file f [--filled-gap "concepto:nota"] [--force]</code></td><td>Confirma el elemento <code>summary</code> de <code>analyse</code>.</td></tr>
+<tr><td><code>learnkit analyse mindmap set --session id --file f [--force]</code></td><td>Confirma el elemento <code>mindmap</code> de <code>analyse</code>.</td></tr>
+<tr><td><code>learnkit analyse page add --session id --concept c --file f</code></td><td>Añade y confirma un elemento <code>page-&lt;n&gt;</code> de <code>analyse</code>.</td></tr>
+<tr><td><code>learnkit analyse flag-pending item_id --session id --reason r</code></td><td>Marca un elemento (<code>summary</code>/<code>mindmap</code>/<code>page-&lt;n&gt;</code>) como <code>pending_user_decision</code>.</td></tr>
+<tr><td><code>learnkit analyse skip item_id --session id --reason r</code></td><td>Omite explícitamente un elemento pendiente, sin confirmar contenido real.</td></tr>
+<tr><td><code>learnkit consolidate --session id [--json]</code></td><td>Deriva y deduplica candidatos de vocabulario a partir del análisis.</td></tr>
+<tr><td><code>learnkit consolidate list --session id [--json]</code></td><td>Lista los candidatos ya persistidos de la sesión.</td></tr>
 <tr><td><code>learnkit learn vocabulary add --session id --lemma "t" --sense "s" --source id [--locator l] [--suggested-by agent|manual]</code></td><td>Confirma una entrada de vocabulario.</td></tr>
 <tr><td><code>learnkit cards build --session id [--template id]</code></td><td>Genera tarjetas a partir del vocabulario.</td></tr>
 <tr><td><code>learnkit cards validate --session id [--json]</code></td><td>Comprueba qué tarjetas están completas.</td></tr>
@@ -258,7 +345,7 @@ learnkit progress --skill listening</code></pre>
 </table>
 <p>Todos los comandos aceptan <code>--json</code> para salida estructurada (pensada para agentes/scripts) y <code>--path P</code> para operar sobre un proyecto que no es el directorio actual.</p>
 
-<h2 id="s12">12. Solución de problemas</h2>
+<h2 id="s14">14. Solución de problemas</h2>
 <table>
 <thead><tr><th>Situación</th><th>Qué significa</th><th>Qué hacer</th></tr></thead>
 <tbody>
@@ -270,13 +357,14 @@ learnkit progress --skill listening</code></pre>
 </tbody>
 </table>
 
-<h2 id="s13">13. Qué no hace (todavía) LearnKit</h2>
+<h2 id="s15">15. Qué no hace (todavía) LearnKit</h2>
 <ul>
   <li>Exportar a Kahoot o Blooket (previsto en el roadmap, no implementado).</li>
   <li>Un comando <code>learnkit doctor</code> que compruebe de antemano qué herramientas externas tienes instaladas.</li>
   <li>Un <code>learnkit run &lt;fase&gt;</code> / <code>learnkit validate</code> genéricos — cada comando (<code>inventory</code>, <code>transcribe</code>, <code>cards build</code>...) valida sus propias dependencias directamente.</li>
-  <li>Perfiles no lingüísticos (geografía, historia, Godot) — el perfil <code>language-en</code> es el único implementado por ahora.</li>
+  <li>Perfiles no lingüísticos (geografía, historia, Godot) — el perfil <code>language-en</code> es el único implementado por ahora. <code>analyse</code> (resumen/mapa mental/páginas) sí es genérico y no depende de idiomas, pero <code>consolidate</code> (ver siguiente punto) sigue acotado a vocabulario.</li>
   <li>Verificación real de importación en TAO/QTI, Kahoot o Blooket — solo Anki Desktop está verificado con datos reales.</li>
+  <li><code>consolidate</code> solo produce y deduplica candidatos de <strong>vocabulario</strong>; generalizarlo a preguntas de gramática o de conocimiento general (con su propia clave de deduplicación) queda para una feature posterior, apoyada en la plantilla de pregunta/respuesta+explicación todavía no implementada.</li>
 </ul>
 
 <footer>
