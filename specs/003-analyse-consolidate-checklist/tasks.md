@@ -134,17 +134,17 @@ tests/fixtures/            fixtures de material con huecos deliberados, para FR-
 
 ### Tests for User Story 4
 
-- [ ] T027 [P] [US4] Test de integración: `consolidate` produce un listado de `ConsolidatedCandidate` derivado del resumen/páginas de una sesión analizada, cada uno con su trazabilidad de origen (FR-010/012, Acceptance Scenario 1 de US4) en `crates/learnkit-cli/tests/consolidate_test.rs`.
-- [ ] T028 [P] [US4] Test de integración: consolidar dos sesiones que comparten un mismo concepto de vocabulario ya persistido marca el segundo candidato con `already_exists: true` y no lo duplica en el listado de candidatos nuevos (FR-011, Acceptance Scenario 2 de US4, SC-005) en `crates/learnkit-cli/tests/consolidate_test.rs`.
-- [ ] T029 [P] [US4] Test de integración: `consolidate` sobre una sesión con un elemento de `analyse` todavía `pending_user_decision` bloquea explícitamente (exit `20`, `BLOCKED`) la parte afectada, sin consolidar con datos incompletos (FR-013, Edge Case de spec.md) en `crates/learnkit-cli/tests/consolidate_test.rs`.
-- [ ] T030 [P] [US4] Test de integración: `consolidate list` muestra los candidatos ya consolidados de una sesión, con su origen y su estado de duplicado (Acceptance Scenario 3 de US4) en `crates/learnkit-cli/tests/consolidate_test.rs`.
+- [X] T027 [P] [US4] Test de integración: `consolidate` produce un listado de `ConsolidatedCandidate` derivado del resumen/páginas de una sesión analizada, cada uno con su trazabilidad de origen (FR-010/012, Acceptance Scenario 1 de US4) en `crates/learnkit-cli/tests/consolidate_test.rs`.
+- [X] T028 [P] [US4] Test de integración: consolidar dos sesiones que comparten un mismo concepto de vocabulario ya persistido marca el segundo candidato con `already_exists: true` y no lo duplica en el listado de candidatos nuevos (FR-011, Acceptance Scenario 2 de US4, SC-005) en `crates/learnkit-cli/tests/consolidate_test.rs`.
+- [X] T029 [P] [US4] Test de integración: `consolidate` sobre una sesión con un elemento de `analyse` todavía `pending_user_decision` bloquea explícitamente (exit `20`, `BLOCKED`) la parte afectada, sin consolidar con datos incompletos (FR-013, Edge Case de spec.md) en `crates/learnkit-cli/tests/consolidate_test.rs`.
+- [X] T030 [P] [US4] Test de integración: `consolidate list` muestra los candidatos ya consolidados de una sesión, con su origen y su estado de duplicado (Acceptance Scenario 3 de US4) en `crates/learnkit-cli/tests/consolidate_test.rs`.
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Implementar `ConsolidatedCandidate` (creación, lectura/escritura en `sessions/<id>/consolidated/`, ya reservado en `session_paths.rs`; campo `candidate_type` con único variante `vocabulary` en esta feature) en `crates/learnkit-workflow/src/consolidate.rs`, según `data-model.md` (depende de T004).
-- [ ] T032 [US4] Implementar el guard de entrada de `consolidate`: bloquear (exit `20`) la parte de la sesión afectada por cualquier elemento de `analyse` que siga `pending_user_decision`, dejando consolidar con normalidad el resto, en `crates/learnkit-workflow/src/consolidate.rs` (depende de T031, T025).
-- [ ] T033 [US4] Implementar el handler CLI `consolidate`: derivar candidatos de vocabulario del `ClassSummary`/`ConceptPage` ya confirmados, comprobar cada uno contra `VocabularyEntry` (dedup por `lemma`, vía la API pública ya existente de `learnkit-profile::language`, **sin** que `learnkit-workflow` dependa de `learnkit-profile` — ver `research.md` §4), y persistir el resultado vía T031, en `crates/learnkit-cli/src/commands/consolidate.rs` (nuevo) (depende de T031, T032).
-- [ ] T034 [US4] Implementar el handler CLI `consolidate list` en `crates/learnkit-cli/src/commands/consolidate.rs` (depende de T031).
+- [X] T031 [US4] Implementar `ConsolidatedCandidate` (creación, lectura/escritura en `sessions/<id>/consolidated/`, ya reservado en `session_paths.rs`; campo `candidate_type` con único variante `vocabulary` en esta feature) en `crates/learnkit-workflow/src/consolidate.rs`, según `data-model.md` (depende de T004).
+- [X] T032 [US4] Implementar el guard de entrada de `consolidate`: bloquear (exit `20`) la parte de la sesión afectada por cualquier elemento de `analyse` que siga `pending_user_decision`, dejando consolidar con normalidad el resto, en `crates/learnkit-workflow/src/consolidate.rs` (depende de T031, T025).
+- [X] T033 [US4] Implementar el handler CLI `consolidate`: derivar candidatos de vocabulario del `ClassSummary`/`ConceptPage` ya confirmados, comprobar cada uno contra `VocabularyEntry` (dedup por `lemma`, vía la API pública ya existente de `learnkit-profile::language`, **sin** que `learnkit-workflow` dependa de `learnkit-profile` — ver `research.md` §4), y persistir el resultado vía T031, en `crates/learnkit-cli/src/commands/consolidate.rs` (nuevo) (depende de T031, T032).
+- [X] T034 [US4] Implementar el handler CLI `consolidate list` en `crates/learnkit-cli/src/commands/consolidate.rs` (depende de T031).
 
 **Checkpoint**: las 4 historias de usuario funcionan de forma independiente — pipeline `inventory → analyse → consolidate → vocabulary` cerrado para el caso de vocabulario.
 

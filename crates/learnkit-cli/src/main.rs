@@ -33,6 +33,8 @@ enum Command {
     Analyse(commands::analyse::AnalyseArgs),
     /// Build or validate study cards from vocabulary learning items.
     Cards(commands::cards::CardsArgs),
+    /// Consolidate a session's `analyse` output into vocabulary candidates.
+    Consolidate(commands::consolidate::ConsolidateArgs),
     /// Export session artifacts to external formats (Anki, exam HTML, ...).
     Export(commands::export::ExportArgs),
     /// Generate the assessment question bank for a session.
@@ -61,6 +63,7 @@ fn main() {
         Command::Learn(args) => commands::learn::run(args),
         Command::Analyse(args) => commands::analyse::run(args),
         Command::Cards(args) => commands::cards::run(args),
+        Command::Consolidate(args) => commands::consolidate::run(args),
         Command::Export(args) => commands::export::run(args),
         Command::Assessment(args) => commands::assessment::run(args),
         Command::Attempt(args) => commands::attempt::run(args),
