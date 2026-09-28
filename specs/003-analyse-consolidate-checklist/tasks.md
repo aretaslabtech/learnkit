@@ -222,6 +222,18 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+---
+
+## Phase 8: Calidad del resumen y del borrador de candidatos (FR-015/FR-016 — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: David usó el pipeline completo end-to-end (sesión real de clase) y encontró dos problemas de calidad, no de corrección estructural: (1) el resumen de `analyse` se redactó a partir de un subagente que solo devolvió una narrativa, perdiendo dos tablas completas de vocabulario que solo existían en fotos de la pizarra; (2) `consolidate` propuso 831 candidatos de un único resumen, prácticamente todos ruido, por un filtro de palabras vacías demasiado mínimo. Ver FR-015/FR-016.
+
+- [X] T039 [P] Reforzar `crates/learnkit-agent/templates/skills/learnkit-analyse/SKILL.md` §1 ("Read what is already known") para exigir explícitamente revisar cada fuente de tipo imagen (`sources[].kind == "image"`) directamente, no solo `text_material`, antes de dar el material de origen por revisado — y, si se delega esa lectura en un subagente, exigirle contenido literal/estructurado (tablas completas) en vez de un resumen narrativo.
+- [X] T040 [P] Endurecer el filtrado de `extract_candidates`/`STOPWORDS` en `crates/learnkit-cli/src/commands/consolidate.rs` (lista de palabras vacías mucho más amplia, umbral de longitud más alto, y/o otra heurística de reducción de ruido) para que el borrador de candidatos sea sustancialmente más útil de partida, sin pretender sustituir la curación del agente (FR-016).
+- [X] T041 [P] Test de integración: con un resumen de ejemplo largo y realista, `consolidate` produce un número de candidatos sensiblemente menor que antes del endurecimiento del filtro (regresión de ruido) en `crates/learnkit-cli/tests/consolidate_test.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.

@@ -34,18 +34,62 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-/// English function words trivial enough to never be useful vocabulary
-/// candidates on their own, plus a few common Spanish connective words that
-/// show up in this project's own session narration (see
-/// `tests/fixtures/analyse-sample/notes.md`) — not an attempt at a real
-/// stopword list for either language, just enough to keep the mechanical
-/// derivation from proposing obvious noise (`tasks.md` T033).
+/// Common English and Spanish words trivial enough to never be useful
+/// vocabulary candidates on their own, plus "meta" words that describe the
+/// class/session itself rather than anything taught in it (`resumen`,
+/// `clase`, `turno`...) — these show up constantly in a LearnKit-generated
+/// summary precisely *because* it's a summary of a class, not because they
+/// were vocabulary worked on in it.
+///
+/// Not a linguistically complete stopword list for either language — this
+/// is a mechanical, non-NLP derivation (`tasks.md` T033/T040), the actual
+/// vocabulary *suggestion* step happens conversationally via the
+/// `learnkit-language` Skill (feature 002). The original ~35-word list
+/// (FR-016, found post-release) let a single real summary through almost
+/// entirely as "candidates" — 831 of them, nearly all noise — so this list
+/// is deliberately much larger, even though it still can't replace real
+/// frequency data or an agent's judgment.
 const STOPWORDS: &[&str] = &[
+    // English: pronouns, be/have/do, modals, determiners, conjunctions,
+    // prepositions.
     "the", "and", "that", "with", "from", "this", "have", "were", "they", "what", "when", "where",
     "which", "been", "being", "would", "could", "should", "about", "there", "then", "than", "also",
     "your", "their", "them", "some", "such", "only", "just", "very", "more", "most", "other",
-    "into", "over", "after", "before", "because", "while", "during", "para", "pero", "como",
-    "hemos", "esta", "este", "esto", "para", "muy", "queda",
+    "into", "over", "after", "before", "because", "while", "during", "these", "those", "here",
+    "who", "whom", "whose", "does", "doing", "done", "will", "shall", "must", "might", "cannot",
+    "each", "every", "both", "either", "neither", "any", "few", "many", "much", "several", "all",
+    "same", "different", "own", "another", "again", "once", "still", "even", "though", "although",
+    "until", "unless", "since", "upon", "within", "without", "under", "above", "below", "between",
+    "among", "through", "against", "toward", "towards", "across", "along", "around", "behind",
+    "beyond", "beside", "besides", "despite", "except", "plus", "minus", "per", "via",
+    // English: very common verbs/adjectives/adverbs/nouns that are almost
+    // never new vocabulary in a language-class summary (they're the
+    // narration's own scaffolding, not target words).
+    "make", "made", "said", "says", "like", "time", "people", "know", "knew", "known", "think",
+    "thought", "want", "wanted", "come", "came", "look", "looked", "give", "gave", "given", "work",
+    "worked", "call", "called", "need", "needed", "feel", "felt", "seem", "seemed", "leave", "left",
+    "keep", "kept", "let", "ask", "asked", "show", "showed", "shown", "try", "tried", "point",
+    "back", "good", "well", "way", "ways", "day", "days", "life", "world", "hand", "part", "parts",
+    "place", "case", "week", "weeks", "month", "months", "year", "years", "student", "students",
+    "teacher", "teachers", "class", "classes", "lesson", "lessons", "example", "examples", "word",
+    "words", "review", "mistake", "mistakes", "rule", "rules", "concept", "concepts", "material",
+    "session", "sessions", "content", "topic", "topics", "practice", "practiced", "exercise",
+    "exercises", "activity", "activities", "level", "levels", "group", "groups", "note", "notes",
+    // Spanish: artículos, pronombres, preposiciones, conjunciones,
+    // conectores, verbos muy comunes.
+    "para", "pero", "como", "hemos", "esta", "este", "esto", "estas", "estos", "muy", "queda",
+    "quedan", "desde", "hasta", "sobre", "entre", "durante", "cuando", "donde", "porque", "aunque",
+    "mientras", "también", "tampoco", "además", "sino", "según", "mediante", "hacia", "cada",
+    "otros", "otras", "otro", "otra", "algunos", "algunas", "todos", "todas", "mismo", "misma",
+    "propio", "propia", "cual", "cuales", "quien", "quienes", "cuyo", "cuya",
+    // Spanish: palabras "meta" que describen la propia clase/sesión, no
+    // vocabulario objetivo — encontrado tras uso real (FR-016).
+    "resumen", "clase", "clases", "turno", "turnos", "profesor", "profesora", "alumno", "alumna",
+    "alumnos", "estudiante", "estudiantes", "sesión", "sesiones", "apuntes", "página", "páginas",
+    "tabla", "tablas", "ejemplo", "ejemplos", "palabra", "palabras", "repaso", "error", "errores",
+    "regla", "reglas", "concepto", "conceptos", "material", "contenido", "tema", "temas",
+    "práctica", "practicamos", "trabajamos", "trabajó", "vimos", "hicimos", "vocabulario",
+    "ejercicio", "ejercicios", "pizarra",
 ];
 
 #[derive(Args)]

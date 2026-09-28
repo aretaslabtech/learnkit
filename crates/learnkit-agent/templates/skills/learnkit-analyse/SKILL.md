@@ -19,7 +19,24 @@ against the same session.
 1. Run `learnkit session show --session <session_id> --json` and read
    `text_material`: the session's notes plus, for each audio source, its
    transcript segments.
-2. Run `learnkit status --session <session_id> --json` and look at the
+2. **Also check every source of type `image`.** `session show --json`'s
+   `sources` array lists every inventoried file with its `kind` and `path` —
+   `text_material` only covers notes/transcripts, it never includes what's in
+   a photo. Before treating step 1 as complete, open and read each
+   `sources[].kind == "image"` file directly (e.g. a photo of a blackboard,
+   handout, or notebook page) — do not skip this because `text_material`
+   already looks substantial. Found in real use: a summary was drafted from
+   only the text material and a narrative digest of the photos, and two
+   complete vocabulary tables that existed only in the photos were silently
+   dropped as a result.
+3. If you delegate reading the source material (notes, transcript, or
+   images) to a subagent instead of reading it yourself, require it to
+   return the literal, structured content it found — full tables verbatim,
+   full lists, exact wording — never just a narrative summary of what it
+   saw. A narrative digest is exactly what caused the dropped tables above;
+   treat any subagent report that only paraphrases as incomplete and ask it
+   to re-read and return the literal content instead.
+4. Run `learnkit status --session <session_id> --json` and look at the
    `analyse` entry's `checklist` array. Each item (`summary`, `mindmap`,
    `page-<n>`) already tells you its current state:
    - `done` — already confirmed and still current; do not redo it.

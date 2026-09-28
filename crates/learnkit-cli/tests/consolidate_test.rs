@@ -333,3 +333,73 @@ fn consolidate_list_shows_persisted_candidates_with_origin_and_duplicate_status(
         assert!(candidate.get("already_exists").is_some());
     }
 }
+
+// --- T041 (FR-016, post-release): a realistic summary must not flood the
+// candidate list with narration noise ("resumen", "clase", "turnos"...) the
+// way the original ~35-word stoplist did in real use (831 candidates from
+// one summary) ---
+
+#[test]
+fn consolidate_filters_narration_noise_from_a_realistic_summary() {
+    let project = tempfile::tempdir().unwrap();
+    let content_dir = tempfile::tempdir().unwrap();
+    let session_id = new_session_with_notes(project.path());
+
+    confirm_summary(
+        project.path(),
+        content_dir.path(),
+        &session_id,
+        "Resumen de la clase: en esta sesión el profesor trabajó con los alumnos \
+         varios turnos de conversación, repasando el vocabulario ya visto en clases \
+         anteriores. Hicimos ejercicios de pronunciación y revisamos el ejemplo del \
+         sonido schwa. También practicamos las palabras walkie-talkie, celebration, \
+         influencer y jet lag, que son vocabulario nuevo para los estudiantes. El \
+         profesor recordó la regla sobre soccer vs football y remarcó el error \
+         común entre gay y guy. Quedan pendientes de repaso algunas páginas del \
+         material y las tablas de la pizarra con más ejemplos de este tema.",
+    );
+
+    let (code, json) = consolidate_json(project.path(), &session_id);
+    assert_eq!(code, 0);
+    let candidates = json["candidates"].as_array().unwrap();
+
+    // The old ~35-word stoplist let almost every 4+ letter token through —
+    // for a paragraph this size that was dozens of candidates, and crucially
+    // it let the narration/meta words below straight through too. The
+    // hardened filter is not a real NLP stemmer (it can't catch every
+    // conjugated support verb), but it must at minimum exclude every
+    // narration/meta word by name and keep the total reasonably bounded.
+    assert!(
+        candidates.len() < 25,
+        "expected the noise filter to keep candidates under 25 for this \
+         paragraph, got {} ({:?})",
+        candidates.len(),
+        candidates
+            .iter()
+            .map(|c| c["text"].as_str().unwrap_or(""))
+            .collect::<Vec<_>>()
+    );
+
+    let texts: Vec<&str> = candidates
+        .iter()
+        .map(|c| c["text"].as_str().unwrap())
+        .collect();
+    for noise in [
+        "resumen", "clase", "clases", "sesión", "profesor", "alumnos", "turnos", "vocabulario",
+        "ejercicios", "ejemplo", "material", "tablas", "estudiantes", "página", "páginas",
+        "tema", "regla", "error",
+    ] {
+        assert!(
+            !texts.contains(&noise),
+            "'{noise}' should have been filtered as narration noise, but survived in {texts:?}"
+        );
+    }
+
+    // Real target vocabulary from the paragraph must still come through.
+    for real in ["celebration", "influencer", "football", "soccer"] {
+        assert!(
+            texts.contains(&real),
+            "'{real}' is real vocabulary and should not have been filtered, got {texts:?}"
+        );
+    }
+}
