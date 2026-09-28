@@ -383,6 +383,16 @@ Con varias personas, una vez completado Foundational: cada historia puede asigna
 
 ---
 
+## Phase 16: Exportar excluyendo tarjetas incompletas (FR-019b — añadida post-release tras uso real, 2026-09-28)
+
+**Purpose**: David tenía 126/127 tarjetas completas de una sesión real; la única incompleta (`ty numbers (30-90)`, sin imagen posible por ser un concepto abstracto) bloqueaba `export anki` por completo, sin forma de exportar el resto mientras se resolvía esa tarjeta suelta. Ver FR-019b.
+
+- [X] T101 [US5] Añadir el flag `--skip-incomplete` a `learnkit export anki` en `crates/learnkit-cli/src/commands/export_anki.rs`: cuando se pasa, las tarjetas incompletas se excluyen del `.apkg` en vez de bloquear toda la exportación; el resultado (`--json` y humano) DEBE listar qué tarjetas se excluyeron y por qué (mismo shape que `incomplete_cards` ya usa hoy para el caso de fallo). Sin el flag, el comportamiento por defecto sigue siendo FR-019 (falla si hay alguna incompleta).
+- [X] T102 [P] [US5] Test de integración: `export anki` sin `--skip-incomplete` sigue fallando (exit 40) si hay una tarjeta incompleta, exactamente como antes (regresión de FR-019) en `crates/learnkit-cli/tests/export_anki_test.rs`.
+- [X] T103 [P] [US5] Test de integración: `export anki --skip-incomplete` con una tarjeta incompleta entre varias completas exporta un `.apkg` válido con solo las completas, y el resultado indica qué tarjeta se excluyó y por qué en `crates/learnkit-cli/tests/export_anki_test.rs`.
+
+---
+
 ## Notes
 
 - [P] = ficheros distintos, sin dependencias pendientes entre sí.

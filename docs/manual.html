@@ -287,6 +287,9 @@ $ echo $?
 <h2 id="s9">9. Exportar a Anki</h2>
 <pre><code>learnkit export anki --session &lt;session_id&gt; --out dist/mi-mazo.apkg</code></pre>
 <p>Si alguna tarjeta no está <code>complete</code>, el comando falla explícitamente (código de salida <code>40</code>) indicando exactamente cuál y qué le falta — nunca genera un <code>.apkg</code> a medias.</p>
+<p>Si tienes una o varias tarjetas atascadas (por ejemplo, un concepto demasiado abstracto para el que Wikimedia nunca va a encontrar una imagen) y quieres exportar igualmente el resto del mazo, añade <code>--skip-incomplete</code>:</p>
+<pre><code>learnkit export anki --session &lt;session_id&gt; --out dist/mi-mazo.apkg --skip-incomplete --json</code></pre>
+<p>Exporta un <code>.apkg</code> válido solo con las tarjetas completas, y el resultado (<code>excluded_cards</code>) indica exactamente cuáles se quedaron fuera y por qué — nunca las omite en silencio. Sin <code>--skip-incomplete</code>, el comportamiento por defecto sigue siendo el de antes: falla si hay alguna incompleta.</p>
 <div class="callout">Importa <code>dist/mi-mazo.apkg</code> en Anki Desktop (<code>Archivo → Importar...</code>). <strong>Verificado</strong>: se importa correctamente, con imagen y audio en el lado que corresponda.</div>
 
 <h2 id="s10">10. Generar y hacer un examen</h2>
@@ -336,7 +339,7 @@ learnkit progress --skill listening</code></pre>
 <tr><td><code>learnkit learn vocabulary add --session id --lemma "t" --sense "s" --source id [--locator l] [--suggested-by agent|manual]</code></td><td>Confirma una entrada de vocabulario.</td></tr>
 <tr><td><code>learnkit cards build --session id [--template id]</code></td><td>Genera tarjetas a partir del vocabulario.</td></tr>
 <tr><td><code>learnkit cards validate --session id [--json]</code></td><td>Comprueba qué tarjetas están completas.</td></tr>
-<tr><td><code>learnkit export anki --session id --out fichero.apkg</code></td><td>Exporta el mazo.</td></tr>
+<tr><td><code>learnkit export anki --session id --out fichero.apkg [--skip-incomplete]</code></td><td>Exporta el mazo. Con <code>--skip-incomplete</code>, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué).</td></tr>
 <tr><td><code>learnkit assessment build --session id</code></td><td>Genera el banco de preguntas (recognition/production/listening).</td></tr>
 <tr><td><code>learnkit export exam --assessment id --session id --out fichero.html</code></td><td>Genera el examen HTML.</td></tr>
 <tr><td><code>learnkit attempt import resultados.json --assessment id --session id</code></td><td>Importa los resultados de un examen.</td></tr>

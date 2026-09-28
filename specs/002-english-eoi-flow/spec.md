@@ -201,6 +201,7 @@ Un usuario quiere ver, de un vistazo, en qué destrezas de vocabulario (reconoci
 
 - **FR-018**: El sistema DEBE permitir exportar un conjunto de tarjetas completas a un único fichero de mazo autocontenido (tarjetas + todos sus recursos multimedia) importable en un programa de repaso espaciado compatible.
 - **FR-019**: La exportación DEBE fallar de forma explícita, señalando qué tarjeta y qué recurso falta, si alguna tarjeta incluida no cumple los requisitos obligatorios de su plantilla; no debe producir un mazo parcial o silenciosamente incompleto.
+- **FR-019b** (añadida post-release tras uso real, 2026-09-28): el usuario DEBE poder pedir explícitamente que la exportación excluya las tarjetas incompletas y exporte igualmente el resto (`--skip-incomplete` o equivalente), en vez de que una única tarjeta atascada (p. ej. por falta de imagen para un concepto abstracto) bloquee la exportación de un mazo por lo demás completo. Esto NO DEBE ser el comportamiento por defecto (FR-019 se mantiene: sin el flag explícito, sigue fallando); y el resultado DEBE listar exactamente qué tarjetas se excluyeron y por qué, nunca omitirlas en silencio.
 - **FR-020**: Reexportar un mazo tras añadir nuevas tarjetas NO DEBE duplicar las tarjetas ya existentes al reimportarlo.
 
 **Evaluación**

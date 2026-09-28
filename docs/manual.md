@@ -285,6 +285,14 @@ learnkit export anki --session <session_id> --out dist/mi-mazo.apkg
 
 Si alguna tarjeta no está `complete`, el comando falla explícitamente (código de salida `40`) indicando exactamente cuál y qué le falta — nunca genera un `.apkg` a medias.
 
+Si tienes una o varias tarjetas atascadas (por ejemplo, un concepto demasiado abstracto para el que Wikimedia nunca va a encontrar una imagen) y quieres exportar igualmente el resto del mazo, añade `--skip-incomplete`:
+
+```bash
+learnkit export anki --session <session_id> --out dist/mi-mazo.apkg --skip-incomplete --json
+```
+
+Exporta un `.apkg` válido solo con las tarjetas completas, y el resultado (`excluded_cards`) indica exactamente cuáles se quedaron fuera y por qué — nunca las omite en silencio. Sin `--skip-incomplete`, el comportamiento por defecto sigue siendo el de antes: falla si hay alguna incompleta.
+
 Importa `dist/mi-mazo.apkg` en Anki Desktop (`Archivo → Importar...`). **Verificado**: se importa correctamente, con imagen y audio en el lado que corresponda.
 
 ## 10. Generar y hacer un examen
@@ -359,7 +367,7 @@ flujo.
 | `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual]` | Confirma una entrada de vocabulario. |
 | `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario. |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
-| `learnkit export anki --session <id> --out <fichero.apkg>` | Exporta el mazo. |
+| `learnkit export anki --session <id> --out <fichero.apkg> [--skip-incomplete]` | Exporta el mazo. Con `--skip-incomplete`, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué). |
 | `learnkit assessment build --session <id>` | Genera el banco de preguntas (recognition/production/listening). |
 | `learnkit export exam --assessment <id> --session <id> --out <fichero.html>` | Genera el examen HTML. |
 | `learnkit attempt import <resultados.json> --assessment <id> --session <id>` | Importa los resultados de un examen. |

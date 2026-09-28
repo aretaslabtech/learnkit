@@ -19,9 +19,16 @@ pub struct ExportAnkiArgs {
     path: Option<PathBuf>,
     #[arg(long)]
     json: bool,
+    /// Export the complete cards anyway, excluding incomplete ones instead
+    /// of failing the whole export (FR-019b). The default (this flag
+    /// omitted) is still FR-019: fail explicitly if any card is incomplete.
+    /// Excluded cards are always listed in the result, never dropped
+    /// silently.
+    #[arg(long)]
+    skip_incomplete: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct IncompleteCard {
     id: String,
     reason: String,
@@ -35,6 +42,8 @@ struct ExportData {
     card_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     incomplete_cards: Option<Vec<IncompleteCard>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excluded_cards: Option<Vec<IncompleteCard>>,
 }
 
 pub fn run(args: ExportAnkiArgs) -> i32 {
@@ -58,6 +67,7 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         }
     };
 
+    let incomplete_ids: std::collections::HashSet<String>;
     let incomplete: Vec<IncompleteCard> = cards
         .iter()
         .filter_map(|c| match completeness(c) {
@@ -70,7 +80,7 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         })
         .collect();
 
-    if !incomplete.is_empty() {
+    if !incomplete.is_empty() && !args.skip_incomplete {
         let message = incomplete
             .iter()
             .map(|c| format!("{}: {}", c.id, c.reason))
@@ -94,6 +104,12 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         return err.exit_code();
     }
 
+    incomplete_ids = incomplete.iter().map(|c| c.id.clone()).collect();
+    let cards: Vec<_> = cards
+        .into_iter()
+        .filter(|c| !incomplete_ids.contains(&c.id))
+        .collect();
+
     let assets_dir = session_paths.assets();
     let mut assets_map = HashMap::new();
     for card in &cards {
@@ -113,6 +129,12 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
         }
     }
 
+    let excluded_cards = if incomplete.is_empty() {
+        None
+    } else {
+        Some(incomplete)
+    };
+
     match learnkit_anki::package::build_apkg(&cards, &assets_map, &args.out) {
         Ok(result) => {
             if args.json {
@@ -122,6 +144,7 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
                         out: Some(args.out.display().to_string()),
                         card_count: Some(result.card_count),
                         incomplete_cards: None,
+                        excluded_cards: excluded_cards.clone(),
                     },
                 )
                 .print_json();
@@ -131,6 +154,15 @@ pub fn run(args: ExportAnkiArgs) -> i32 {
                     args.out.display(),
                     result.card_count
                 );
+                if let Some(excluded) = &excluded_cards {
+                    println!(
+                        "Excluidas {} tarjeta(s) incompleta(s) (--skip-incomplete):",
+                        excluded.len()
+                    );
+                    for c in excluded {
+                        println!("  - {}: {}", c.id, c.reason);
+                    }
+                }
             }
             0
         }
