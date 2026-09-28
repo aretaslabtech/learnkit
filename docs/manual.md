@@ -305,6 +305,23 @@ Exporta un `.apkg` válido solo con las tarjetas completas, y el resultado (`exc
 
 Importa `dist/mi-mazo.apkg` en Anki Desktop (`Archivo → Importar...`). **Verificado**: se importa correctamente, con imagen y audio en el lado que corresponda.
 
+### Exportar una guía de estudio
+
+Si lo que quieres es un documento legible e imprimible con el temario ya
+analizado (resumen, mapa mental, páginas de concepto) — sin la paja de
+fases/checklist/fingerprints de LearnKit — usa:
+
+```bash
+learnkit export study-guide --session <session_id> --out dist/guia-de-estudio.md
+```
+
+Requiere que el elemento `summary` de `analyse` ([§5](#5-analizar-la-sesión-resumen-mapa-mental-páginas)) esté confirmado — si no lo está, el comando falla explícitamente (código de salida `40`) y no escribe ningún fichero. El mapa mental y las páginas de concepto son opcionales: si no existen, sus secciones simplemente se omiten del documento, sin bloquear la exportación.
+
+El documento resultante es un único Markdown, en este orden: título de la
+sesión (`#`) → `## Resumen` → `## Mapa mental` (si existe) → una sección
+`## <concepto>` por cada página de concepto, en el mismo orden en que se
+confirmaron.
+
 ## 10. Generar y hacer un examen
 
 ```bash
@@ -378,6 +395,7 @@ flujo.
 | `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario. |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
 | `learnkit export anki --session <id> --out <fichero.apkg> [--skip-incomplete]` | Exporta el mazo. Con `--skip-incomplete`, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué). |
+| `learnkit export study-guide --session <id> --out <fichero.md> [--json]` | Exporta el resumen/mapa mental/páginas de concepto ya confirmados a un único Markdown legible. Falla si no hay `summary` confirmado; mapa mental y páginas son opcionales. |
 | `learnkit assessment build --session <id>` | Genera el banco de preguntas (recognition/production/listening). |
 | `learnkit export exam --assessment <id> --session <id> --out <fichero.html>` | Genera el examen HTML. |
 | `learnkit attempt import <resultados.json> --assessment <id> --session <id>` | Importa los resultados de un examen. |

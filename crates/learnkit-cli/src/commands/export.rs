@@ -1,4 +1,4 @@
-use crate::commands::{assessment, export_anki};
+use crate::commands::{assessment, export_anki, export_study_guide};
 use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
 use learnkit_assessment::exam_html;
@@ -19,6 +19,9 @@ enum ExportAction {
     Anki(export_anki::ExportAnkiArgs),
     /// Export a self-contained HTML exam for an assessment.
     Exam(ExamArgs),
+    /// Export a session's confirmed `analyse` content (summary, mind map,
+    /// concept pages) to a single printable Markdown study guide.
+    StudyGuide(export_study_guide::ExportStudyGuideArgs),
 }
 
 #[derive(Args)]
@@ -39,6 +42,7 @@ pub fn run(args: ExportArgs) -> i32 {
     match args.action {
         ExportAction::Anki(a) => export_anki::run(a),
         ExportAction::Exam(a) => run_exam(a),
+        ExportAction::StudyGuide(a) => export_study_guide::run(a),
     }
 }
 

@@ -302,6 +302,12 @@ $ echo $?
 <p>Exporta un <code>.apkg</code> válido solo con las tarjetas completas, y el resultado (<code>excluded_cards</code>) indica exactamente cuáles se quedaron fuera y por qué — nunca las omite en silencio. Sin <code>--skip-incomplete</code>, el comportamiento por defecto sigue siendo el de antes: falla si hay alguna incompleta.</p>
 <div class="callout">Importa <code>dist/mi-mazo.apkg</code> en Anki Desktop (<code>Archivo → Importar...</code>). <strong>Verificado</strong>: se importa correctamente, con imagen y audio en el lado que corresponda.</div>
 
+<h3>Exportar una guía de estudio</h3>
+<p>Si lo que quieres es un documento legible e imprimible con el temario ya analizado (resumen, mapa mental, páginas de concepto) — sin la paja de fases/checklist/fingerprints de LearnKit — usa:</p>
+<pre><code>learnkit export study-guide --session &lt;session_id&gt; --out dist/guia-de-estudio.md</code></pre>
+<p>Requiere que el elemento <code>summary</code> de <code>analyse</code> (<a href="#s5">§5</a>) esté confirmado — si no lo está, el comando falla explícitamente (código de salida <code>40</code>) y no escribe ningún fichero. El mapa mental y las páginas de concepto son opcionales: si no existen, sus secciones simplemente se omiten del documento, sin bloquear la exportación.</p>
+<p>El documento resultante es un único Markdown, en este orden: título de la sesión (<code>#</code>) → <code>## Resumen</code> → <code>## Mapa mental</code> (si existe) → una sección <code>## &lt;concepto&gt;</code> por cada página de concepto, en el mismo orden en que se confirmaron.</p>
+
 <h2 id="s10">10. Generar y hacer un examen</h2>
 <pre><code>learnkit assessment build --session &lt;session_id&gt;
 learnkit export exam --assessment &lt;assessment_id&gt; --session &lt;session_id&gt; --out dist/examen.html</code></pre>
@@ -350,6 +356,7 @@ learnkit progress --skill listening</code></pre>
 <tr><td><code>learnkit cards build --session id [--template id]</code></td><td>Genera tarjetas a partir del vocabulario.</td></tr>
 <tr><td><code>learnkit cards validate --session id [--json]</code></td><td>Comprueba qué tarjetas están completas.</td></tr>
 <tr><td><code>learnkit export anki --session id --out fichero.apkg [--skip-incomplete]</code></td><td>Exporta el mazo. Con <code>--skip-incomplete</code>, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué).</td></tr>
+<tr><td><code>learnkit export study-guide --session id --out fichero.md [--json]</code></td><td>Exporta el resumen/mapa mental/páginas de concepto ya confirmados a un único Markdown legible. Falla si no hay <code>summary</code> confirmado; mapa mental y páginas son opcionales.</td></tr>
 <tr><td><code>learnkit assessment build --session id</code></td><td>Genera el banco de preguntas (recognition/production/listening).</td></tr>
 <tr><td><code>learnkit export exam --assessment id --session id --out fichero.html</code></td><td>Genera el examen HTML.</td></tr>
 <tr><td><code>learnkit attempt import resultados.json --assessment id --session id</code></td><td>Importa los resultados de un examen.</td></tr>
