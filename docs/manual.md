@@ -271,7 +271,7 @@ learnkit cards build --session <session_id>
 
 Para cada palabra sin imagen/audio propio, LearnKit:
 - busca una imagen libre en Wikimedia Commons (con licencia y atribución guardadas),
-- genera audio de pronunciación con el servicio REST configurado por defecto (`https://tts.davidpalazon.net`, voz `en-GB-SoniaNeural`) — necesita la variable de entorno `TTS_API_KEY`; `PiperVoiceProvider` sigue disponible en el código como alternativa 100% offline, pero no es el que usa `cards build` por defecto.
+- genera audio de pronunciación con el servicio REST configurado por defecto (`https://tts-mcp2.davidpalazon.net/speak`, voz `en-GB-SoniaNeural`) — no necesita ninguna credencial (`TTS_API_KEY` es opcional, solo se envía si la tienes puesta); `PiperVoiceProvider` sigue disponible en el código como alternativa 100% offline, pero no es el que usa `cards build` por defecto.
 
 Con la plantilla por defecto (`image-to-production-v1`), la tarjeta queda así (corregido tras uso real, 2026-09-28 — antes el anverso no llevaba audio y el reverso solo mostraba la traducción):
 - **Anverso**: imagen + audio de pronunciación (ambos obligatorios — la tarjeta no se considera completa sin los dos).
@@ -283,9 +283,9 @@ Comprueba el resultado:
 learnkit cards validate --session <session_id> --json
 ```
 
-Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tarjeta `pending_*` normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with") o que falta `TTS_API_KEY` — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).
+Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tarjeta `pending_*` normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with"), o que el servicio de audio no respondió (revisa tu conexión) — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).
 
-**Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (en `image-to-production-v1` ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso `Optional` sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada. Si ves muchos avisos con el mismo motivo (p. ej. "missing TTS_API_KEY environment variable"), es una señal de que falta configurar algo, no de que esas palabras en concreto sean un caso especial.
+**Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (en `image-to-production-v1` ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso `Optional` sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada.
 
 ### Revisar la coherencia de las imágenes de Wikimedia (opcional)
 
@@ -455,7 +455,7 @@ Todos los comandos aceptan `--json` para salida estructurada (pensada para agent
 | Situación | Qué significa | Qué hacer |
 |-----------|----------------|-----------|
 | `transcribe` falla con "tool not found" | No tienes `whisper-cli` (whisper.cpp) instalado o no está en el `PATH`. | Instálalo, o usa `transcribe import` con una transcripción ya hecha. Exit code `30`. |
-| `cards build` deja audio sin generar | No tienes `piper` instalado. | Instálalo con una voz `en-GB`, o suministra tú el audio. No bloquea el resto de la tarjeta si el audio es opcional en la plantilla. |
+| `cards build` deja audio sin generar | El servicio REST de voz por defecto (`https://tts-mcp2.davidpalazon.net`) no respondió — revisa tu conexión. | Reintenta con `--force`, suministra tú el audio, o usa `PiperVoiceProvider` (offline, necesita el binario `piper` instalado con una voz `en-GB`). |
 | Una tarjeta queda `pending_image` | Wikimedia Commons no devolvió ninguna imagen con licencia reutilizable (frecuente en modismos/expresiones abstractas). | Suministra tú una imagen, o acepta que esa tarjeta no tenga imagen. |
 | `export anki` falla con exit code `40` | Alguna tarjeta no está `complete`. | El mensaje indica exactamente cuál y qué le falta; corrígela o exporta solo las que sí lo están. |
 | Sin conexión a internet | `cards build` no puede buscar en Wikimedia Commons. | Es el único punto de red de toda la herramienta; todo lo demás funciona offline. El fallo se trata como "sin imagen encontrada", no como error fatal. |
