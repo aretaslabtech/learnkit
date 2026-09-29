@@ -71,6 +71,22 @@ pub enum LearnKitError {
         "learning item '{learning_item_id}' has no CardSpec — run 'learnkit cards set --item {learning_item_id} --activity <str> --stimulus <str> --response <str>' first"
     )]
     CardSpecMissing { learning_item_id: String },
+
+    /// A CLI text argument matches the classic "UTF-8 bytes misread as a
+    /// legacy single-byte codepage" mojibake pattern (e.g. Windows
+    /// PowerShell 5.1 reading a BOM-less .ps1 script as its system codepage
+    /// instead of UTF-8) — see `learnkit_core::encoding::detect_mojibake`.
+    /// Rejected at the CLI boundary rather than silently persisted, since
+    /// the fix is exact and re-attempting the same value would just
+    /// reproduce the corruption.
+    #[error(
+        "el campo --{field} parece corrupto por un error de codificación: \"{value}\" — probablemente un script sin BOM UTF-8 leído por Windows PowerShell. ¿Querías decir \"{suggested}\"? Corrige el origen y vuelve a escribirlo directamente en la consola (o guarda el script con BOM UTF-8) en vez de reintentar con este mismo valor."
+    )]
+    EncodingSuspicious {
+        field: String,
+        value: String,
+        suggested: String,
+    },
 }
 
 impl LearnKitError {
@@ -91,6 +107,7 @@ impl LearnKitError {
             LearnKitError::ExporterConstraint { .. } => "EXPORT_FAILED",
             LearnKitError::ValidationFailed { .. } => "VALIDATION_FAILED",
             LearnKitError::CardSpecMissing { .. } => "CARD_SPEC_MISSING",
+            LearnKitError::EncodingSuspicious { .. } => "ENCODING_SUSPICIOUS",
         }
     }
 
@@ -108,6 +125,7 @@ impl LearnKitError {
             LearnKitError::Provider(_) => 30,
             LearnKitError::ExporterConstraint { .. } => 40,
             LearnKitError::ValidationFailed { .. } => 10,
+            LearnKitError::EncodingSuspicious { .. } => 10,
             LearnKitError::Filesystem { .. } => 50,
             LearnKitError::CardSpecMissing { .. } => 40,
         }
