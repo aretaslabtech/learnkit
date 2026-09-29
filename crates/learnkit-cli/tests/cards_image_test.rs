@@ -211,6 +211,56 @@ fn image_batch_lists_only_pending_image_cards() {
     assert_eq!(items[0]["card_id"], format!("card-{item_id}"));
 }
 
+/// Regression for the `image-reject` / Optional-front-image gap found in
+/// real use (`expression-production-v1`'s `front_image` is `Optional`):
+/// `completeness()` correctly never flags an `Optional` slot as
+/// `PendingImage` (it doesn't block the card), but `image-reject` always
+/// clears the front image's `asset_id` regardless of policy — so a card
+/// whose Optional image was rejected must still be offered a replacement via
+/// `image-batch`, or it would stay imageless forever with nothing ever
+/// asking for a new one.
+#[test]
+fn image_batch_lists_a_card_with_no_front_image_even_when_the_policy_is_optional() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, item_id) = session_with_vocabulary_item(dir.path());
+    let session_paths = SessionPaths::new(dir.path(), &session_id);
+
+    let optional_front_image_card = CardDefinition {
+        id: format!("card-{item_id}"),
+        learning_item_ids: vec![item_id.clone()],
+        template: "expression-production-v1".to_string(),
+        front: Side {
+            blocks: vec![Block::Image { asset_id: None }],
+        },
+        back: Side {
+            blocks: vec![Block::Audio {
+                asset_id: Some("audio-1".to_string()),
+            }],
+        },
+    };
+    learnkit_cards::card::save(session_paths.root(), &optional_front_image_card).unwrap();
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("image-batch")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    let items = json["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["learning_item_id"], item_id);
+}
+
 #[test]
 fn image_batch_caps_results_at_limit() {
     let dir = tempfile::tempdir().unwrap();
