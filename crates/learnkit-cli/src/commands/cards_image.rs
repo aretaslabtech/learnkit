@@ -16,6 +16,7 @@ use learnkit_core::output::Envelope;
 use learnkit_media::asset::{self, AssetOrigin, AssetType};
 use learnkit_media::grid;
 use learnkit_profile::language::learning_item::{load_all_vocabulary_items, LearningItem};
+use learnkit_profile::language::vocabulary::find_by_id as find_vocabulary_by_id;
 use learnkit_store::session_paths::SessionPaths;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,7 +25,11 @@ use std::path::{Path, PathBuf};
 
 /// Provider tag recorded on every asset assigned via `image-grid assign` —
 /// distinct from Wikimedia's `fetched` and audio's `generated`, per T4.
-const GRID_PROVIDER: &str = "chatgpt-grid-manual";
+/// Provider-independent by design (v2 refinement, §8 of David's spec):
+/// LearnKit never calls any specific image-generation API — the grid is
+/// produced externally by whatever tool the agent/human chooses (ChatGPT or
+/// otherwise) — so this label must not bake in a vendor name.
+const GRID_PROVIDER: &str = "external-grid-manual";
 
 #[derive(Args)]
 pub struct ImageBatchArgs {
@@ -115,6 +120,18 @@ struct ImageBatchItem {
     learning_item_id: String,
     title: String,
     card_id: String,
+    /// The item's gloss/meaning (`LearningItem::summary`), when non-empty —
+    /// v2 refinement: disambiguates concepts like "bank" (riverbank vs
+    /// financial) for whoever is generating/searching the image, without
+    /// Rust ever judging image coherence itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sense: Option<String>,
+    /// Usage examples from the underlying `VocabularyEntry`, when any exist
+    /// — same disambiguation rationale as `sense`. Best-effort: a missing or
+    /// unreadable vocabulary entry just omits this field, it never fails the
+    /// whole batch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    examples: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -152,6 +169,14 @@ struct ImageReviewItem {
     license_url: String,
     author: String,
     source_url: String,
+    /// Same semantic-context fields as `ImageBatchItem`, for the same
+    /// reason: an agent judging whether a Wikimedia image coherently
+    /// represents the concept needs the gloss/examples to disambiguate,
+    /// just like one generating a grid prompt does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sense: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    examples: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Default)]
@@ -238,10 +263,13 @@ pub fn run_image_batch(args: ImageBatchArgs) -> i32 {
         let Some(item) = items_by_id.get(item_id) else {
             continue;
         };
+        let (sense, examples) = semantic_context(&root, item);
         batch.push(ImageBatchItem {
             learning_item_id: item.id.clone(),
             title: item.title.clone(),
             card_id: card.id.clone(),
+            sense,
+            examples,
         });
     }
 
@@ -460,6 +488,7 @@ pub fn run_image_review(args: ImageReviewArgs) -> i32 {
             continue;
         };
 
+        let (sense, examples) = semantic_context(&root, item);
         review_items.push(ImageReviewItem {
             card_id: card.id.clone(),
             learning_item_id: item.id.clone(),
@@ -470,6 +499,8 @@ pub fn run_image_review(args: ImageReviewArgs) -> i32 {
             license_url: license_url.clone(),
             author: author.clone(),
             source_url: source_url.clone(),
+            sense,
+            examples,
         });
     }
 
@@ -670,6 +701,35 @@ fn guess_image_mime(path: &Path) -> (&'static str, &'static str) {
         "jpg" | "jpeg" => ("jpg", "image/jpeg"),
         _ => ("png", "image/png"),
     }
+}
+
+/// Best-effort `(sense, examples)` pair for a `LearningItem`, shared by
+/// `image-batch` and `image-review` (v2 refinement). `sense` comes straight
+/// from `item.summary` (already loaded, no extra lookup); `examples` needs
+/// the full `VocabularyEntry`, looked up the same way
+/// `cards.rs::build_image_to_production_blocks` does it. A missing or
+/// unreadable vocabulary entry never fails the caller — it just yields no
+/// examples for that item.
+fn semantic_context(root: &Path, item: &LearningItem) -> (Option<String>, Option<Vec<String>>) {
+    let sense = if item.summary.trim().is_empty() {
+        None
+    } else {
+        Some(item.summary.clone())
+    };
+
+    let examples = find_vocabulary_by_id(root, &item.vocabulary_entry_id)
+        .ok()
+        .flatten()
+        .map(|entry| {
+            entry
+                .examples
+                .into_iter()
+                .map(|example| example.text)
+                .collect::<Vec<String>>()
+        })
+        .filter(|examples| !examples.is_empty());
+
+    (sense, examples)
 }
 
 fn emit_error<T: Serialize + Default>(json: bool, err: LearnKitError) -> i32 {

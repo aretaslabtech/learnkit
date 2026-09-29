@@ -147,6 +147,29 @@ fn expected_color(index: u32) -> Rgba<u8> {
     ])
 }
 
+/// Generalized version of `sixteen_quadrant_grid_png` for an `n`x`n` grid
+/// (v2 refinement: `image-grid crop` supports variable grid sizes, not just
+/// 4x4 — 3x3/2x2 are preferred for more detailed visuals like maps or
+/// diagrams, per the `learnkit-image-prompts` Skill). Each cell is
+/// `cell`x`cell` pixels and uses the same `expected_color(index)` palette as
+/// the 4x4 fixture, so `image_grid_crop_produces_16_crops_in_reading_order`
+/// and these new tests share one reading-order/color-check convention.
+fn n_quadrant_grid_png(path: &std::path::Path, n: u32, cell: u32) {
+    let mut img = RgbaImage::new(n * cell, n * cell);
+    for row in 0..n {
+        for col in 0..n {
+            let index = row * n + col;
+            let color = expected_color(index);
+            for y in (row * cell)..(row * cell + cell) {
+                for x in (col * cell)..(col * cell + cell) {
+                    img.put_pixel(x, y, color);
+                }
+            }
+        }
+    }
+    img.save(path).unwrap();
+}
+
 #[test]
 fn image_batch_lists_only_pending_image_cards() {
     let dir = tempfile::tempdir().unwrap();
@@ -263,6 +286,100 @@ fn image_grid_crop_produces_16_crops_in_reading_order() {
     assert_eq!(crops.len(), 16);
     assert!(crops[0].as_str().unwrap().ends_with("crop-01.png"));
     assert!(crops[15].as_str().unwrap().ends_with("crop-16.png"));
+
+    for (index, crop_value) in crops.iter().enumerate() {
+        let path = crop_value.as_str().unwrap();
+        let img = image::open(path).unwrap();
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 100);
+        let pixel = img.get_pixel(50, 50);
+        assert_eq!(
+            pixel,
+            expected_color(index as u32),
+            "crop {index} ({path}) has the wrong color (reading-order bug?)"
+        );
+    }
+}
+
+#[test]
+fn image_grid_crop_produces_9_crops_in_reading_order_for_a_3x3_grid() {
+    let dir = tempfile::tempdir().unwrap();
+    let grid_path = dir.path().join("rejilla.png");
+    n_quadrant_grid_png(&grid_path, 3, 100);
+    let out_dir = dir.path().join("crops");
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("image-grid")
+        .arg("crop")
+        .arg("--file")
+        .arg(&grid_path)
+        .arg("--rows")
+        .arg("3")
+        .arg("--cols")
+        .arg("3")
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    let crops = json["crops"].as_array().unwrap();
+    assert_eq!(crops.len(), 9);
+    assert!(crops[0].as_str().unwrap().ends_with("crop-01.png"));
+    assert!(crops[8].as_str().unwrap().ends_with("crop-09.png"));
+
+    for (index, crop_value) in crops.iter().enumerate() {
+        let path = crop_value.as_str().unwrap();
+        let img = image::open(path).unwrap();
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 100);
+        let pixel = img.get_pixel(50, 50);
+        assert_eq!(
+            pixel,
+            expected_color(index as u32),
+            "crop {index} ({path}) has the wrong color (reading-order bug?)"
+        );
+    }
+}
+
+#[test]
+fn image_grid_crop_produces_4_crops_in_reading_order_for_a_2x2_grid() {
+    let dir = tempfile::tempdir().unwrap();
+    let grid_path = dir.path().join("rejilla.png");
+    n_quadrant_grid_png(&grid_path, 2, 100);
+    let out_dir = dir.path().join("crops");
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("image-grid")
+        .arg("crop")
+        .arg("--file")
+        .arg(&grid_path)
+        .arg("--rows")
+        .arg("2")
+        .arg("--cols")
+        .arg("2")
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    let crops = json["crops"].as_array().unwrap();
+    assert_eq!(crops.len(), 4);
+    assert!(crops[0].as_str().unwrap().ends_with("crop-01.png"));
+    assert!(crops[3].as_str().unwrap().ends_with("crop-04.png"));
 
     for (index, crop_value) in crops.iter().enumerate() {
         let path = crop_value.as_str().unwrap();

@@ -295,7 +295,7 @@ Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tar
 learnkit cards image-review --session <session_id> --json
 ```
 
-Lista cada tarjeta cuya imagen del anverso vino de Wikimedia (no una suministrada ni una generada por rejilla), con la ruta del fichero de imagen y su licencia/atribución, para que la abras y juzgues si de verdad representa el concepto — LearnKit nunca hace ese juicio por sí mismo. Si una no encaja:
+Lista cada tarjeta cuya imagen del anverso vino de Wikimedia (no una suministrada ni una generada por rejilla), con la ruta del fichero de imagen y su licencia/atribución, para que la abras y juzgues si de verdad representa el concepto — LearnKit nunca hace ese juicio por sí mismo. Cuando el vocabulario tiene traducción (`sense`) y/o ejemplos de uso (`examples`) guardados, `image-review` también los incluye en la salida JSON — ayuda a desambiguar conceptos con varios significados (p. ej. "bank": ribera de un río vs. entidad financiera) sin que LearnKit tenga que interpretarlos. Si una no encaja:
 
 ```bash
 learnkit cards image-reject --session <session_id> --item <learning_item_id> --reason "<por qué no encaja>" --json
@@ -303,20 +303,22 @@ learnkit cards image-reject --session <session_id> --item <learning_item_id> --r
 
 La tarjeta vuelve a `pending_image` (la imagen rechazada no se borra del disco, solo se desvincula de esa tarjeta) y el motivo del rechazo queda registrado en `sessions/<session_id>/validation/rejected-images/` para que no se te vuelva a proponer sin contexto. Desde ahí, la tarjeta es candidata a un nuevo intento de `cards build`, a una imagen suministrada a mano, o a la generación por rejilla (siguiente apartado).
 
-### Generar imágenes por rejilla 4x4 para conceptos abstractos
+### Generar imágenes por rejilla para conceptos abstractos
 
-Para palabras o conceptos que Wikimedia Commons difícilmente va a poder ilustrar (por ejemplo expresiones abstractas), LearnKit tiene un segundo modo de resolución de imagen: pedir a una herramienta externa (ChatGPT u otra) una sola imagen en rejilla 4x4 con hasta 16 conceptos a la vez, recortarla, y asignar cada recorte tras revisarlo. LearnKit nunca llama a ninguna API de generación de imágenes — el prompt lo ejecutas tú (o tu agente te lo redacta y tú lo pegas donde quieras).
+Para palabras o conceptos que Wikimedia Commons difícilmente va a poder ilustrar (por ejemplo expresiones abstractas), LearnKit tiene un segundo modo de resolución de imagen: pedir a una herramienta externa (ChatGPT u otra) una sola imagen en rejilla (4x4, 3x3 o 2x2 según el caso — ver más abajo) con hasta 16 conceptos a la vez, recortarla, y asignar cada recorte tras revisarlo. LearnKit nunca llama a ninguna API de generación de imágenes — el prompt lo ejecutas tú (o tu agente te lo redacta y tú lo pegas donde quieras).
 
 El flujo completo, pensado para ejecutarse con tu agente (Skill `learnkit-image-prompts`, pídele "genera imágenes para la sesión `<session_id>`"):
 
-1. **Qué falta** — `learnkit cards image-batch --session <session_id> --json` devuelve hasta 16 tarjetas `pending_image` (mecánico, sin generar texto).
-2. **El prompt** — tu agente redacta un único prompt pidiendo una imagen en rejilla 4x4, una casilla por concepto, en orden de lectura (fila 1 izquierda→derecha, luego fila 2...), sin texto ni etiquetas dentro de la imagen.
+1. **Qué falta** — `learnkit cards image-batch --session <session_id> --json` devuelve hasta 16 tarjetas `pending_image` (mecánico, sin generar texto), incluyendo `sense`/`examples` cuando el vocabulario los tiene guardados — la misma desambiguación que usa `image-review` (ver apartado anterior), pensada para que el prompt del paso 2 no tenga que adivinar el significado de una palabra ambigua.
+2. **El prompt** — tu agente redacta un único prompt pidiendo una imagen en rejilla, una casilla por concepto, en orden de lectura (fila 1 izquierda→derecha, luego fila 2...), sin texto ni etiquetas dentro de la imagen.
 3. **Tú lo ejecutas** en ChatGPT (u otra herramienta) fuera de LearnKit, y guardas la imagen resultante.
-4. **El recorte** — `learnkit cards image-grid crop --file <rejilla.png> --rows 4 --cols 4 --out-dir <dir> --json` divide la rejilla en 16 imágenes individuales, en el mismo orden de lectura.
+4. **El recorte** — `learnkit cards image-grid crop --file <rejilla.png> --rows <R> --cols <C> --out-dir <dir> --json` divide la rejilla en R×C imágenes individuales, en el mismo orden de lectura.
 5. **La revisión** — tu agente mira cada recorte y juzga si representa de verdad el concepto que le tocaba (mismo orden del prompt del paso 2); nunca lo hace LearnKit.
 6. **La asignación** — para cada recorte que sí encaja: `learnkit cards image-grid assign --session <session_id> --item <learning_item_id> --file <recorte.png> --json`. Los recortes que no encajan simplemente no se asignan — la tarjeta sigue `pending_image` para un intento posterior.
 
 Si hay más de 16 tarjetas pendientes en la sesión, se repite el proceso por lotes de hasta 16.
+
+**El tamaño de la rejilla no está fijado a 4x4** — `image-grid crop` acepta cualquier `--rows`/`--cols`. Para conceptos sencillos, una rejilla 4x4 (hasta 16 a la vez) es la más eficiente; para visuales más densos o detallados (mapas, diagramas, procesos con varias partes) conviene una rejilla más pequeña, 3x3 o incluso 2x2, para que cada casilla tenga espacio suficiente y el resultado sea más nítido — es la misma guía que sigue la Skill `learnkit-image-prompts` al redactar el prompt.
 
 ## 9. Exportar a Anki
 
@@ -404,7 +406,7 @@ flujo.
 
 `--agents claude`/`codex` también instala una tercera Skill,
 `learnkit-image-prompts` (ver [§8](#8-generar-tarjetas)): redacta los
-prompts de rejilla 4x4 a partir de `cards image-batch`, y hace la revisión
+prompts de rejilla (4x4, 3x3 o 2x2 según el caso) a partir de `cards image-batch`, y hace la revisión
 de coherencia (tanto de las imágenes de Wikimedia vía `cards image-review`
 como de los recortes de rejilla vía `cards image-grid crop`). Igual que
 `learnkit-analyse`, LearnKit nunca juzga por sí mismo si una imagen
@@ -436,10 +438,10 @@ arrancar cada mitad de este flujo.
 | `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual] [--ipa <ipa>] [--example <e>]...` | Confirma una entrada de vocabulario. `--ipa`/`--example` son opcionales y alimentan el reverso de la tarjeta. |
 | `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario. |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
-| `learnkit cards image-batch --session <id> [--limit 16] [--json]` | Lista hasta `--limit` tarjetas `pending_image` (id, palabra, tarjeta) para un lote de generación por rejilla. |
+| `learnkit cards image-batch --session <id> [--limit 16] [--json]` | Lista hasta `--limit` tarjetas `pending_image` (id, palabra, tarjeta, y `sense`/`examples` cuando existen) para un lote de generación por rejilla (4x4, 3x3 o 2x2 según densidad de detalle). |
 | `learnkit cards image-grid crop --file <rejilla.png> --rows <R> --cols <C> --out-dir <dir> [--json]` | Recorta una imagen en rejilla R×C en imágenes individuales, en orden de lectura. |
 | `learnkit cards image-grid assign --session <id> --item <learning_item_id> --file <recorte.png> [--json]` | Asigna un recorte ya revisado como imagen del anverso de la tarjeta de ese elemento. |
-| `learnkit cards image-review --session <id> [--json]` | Lista las imágenes de Wikimedia ya resueltas de la sesión, con ruta y licencia, para revisión de coherencia. |
+| `learnkit cards image-review --session <id> [--json]` | Lista las imágenes de Wikimedia ya resueltas de la sesión, con ruta, licencia y `sense`/`examples` cuando existen, para revisión de coherencia. |
 | `learnkit cards image-reject --session <id> --item <learning_item_id> --reason "<r>" [--json]` | Desvincula la imagen de Wikimedia de esa tarjeta (vuelve a `pending_image`) y registra el motivo del rechazo. |
 | `learnkit export anki --session <id> --out <fichero.apkg> [--skip-incomplete]` | Exporta el mazo. Con `--skip-incomplete`, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué). |
 | `learnkit export study-guide --session <id> --out <fichero.md> [--json]` | Exporta el resumen/mapa mental/páginas de concepto ya confirmados a un único Markdown legible. Falla si no hay `summary` confirmado; mapa mental y páginas son opcionales. |
