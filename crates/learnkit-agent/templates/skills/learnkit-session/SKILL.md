@@ -1,13 +1,255 @@
 ---
 name: learnkit-session
-description: Start, inspect, and inventory a LearnKit session for the current project.
+description: Orchestrate the lifecycle of a LearnKit session. Resolve the active session, inspect its state and sources, run mechanical prerequisites, and delegate specialised work to the appropriate LearnKit skills without duplicating their responsibilities.
 ---
 
-# LearnKit session
+# LearnKit session — session orchestrator
 
-Use this skill when the user wants to start or continue a LearnKit session.
+Use this skill when the user wants to start, continue, inspect, process, or resume work on a LearnKit session.
 
-1. Run `learnkit status --json`. If the project is not initialized, tell the user and stop.
-2. Run `learnkit session list` / `learnkit session show` to see existing sessions before creating a new one.
-3. Never mark a phase as complete yourself — always run the corresponding `learnkit` command and read its result.
-4. If a command reports a failure (`"ok": false`), fix the underlying artifact and re-run the same command; do not edit `.learnkit/` files directly.
+This skill coordinates the session lifecycle.
+
+It does not replace specialised skills such as `learnkit-analyse`, `learnkit-language`, or `learnkit-image-prompts`.
+
+Its job is to determine the current state, identify the next required action, execute mechanical LearnKit operations when appropriate, and delegate specialised judgement to the correct skill.
+
+## 1. Verify the project
+
+Run:
+
+`learnkit status --json`
+
+If the current directory is not an initialised LearnKit project, report that clearly and stop.
+
+Never create or edit `.learnkit/` files directly.
+
+All state changes must go through supported `learnkit` commands.
+
+## 2. Resolve the session
+
+Before creating a new session, inspect existing sessions.
+
+Use structured output where available.
+
+Run the appropriate session listing/status commands and determine whether the user's request refers to:
+
+- an explicitly named or identified existing session;
+- the clearly active/relevant existing session;
+- a genuinely new class or study session.
+
+Do not create a new session merely because the user did not provide a `session_id`.
+
+Reuse an existing session when the user's intent clearly refers to it.
+
+If multiple sessions are genuinely plausible and choosing incorrectly could mix unrelated material, ask the user to choose.
+
+## 3. Create a session only when needed
+
+When the user is clearly starting a new class/session and no existing session corresponds to it, create one with:
+
+`learnkit session new "<title>"`
+
+Use a clear title derived from the user's supplied context.
+
+Do not create duplicate sessions for the same class merely because processing is resumed later.
+
+After creation, retain the returned `session_id` for subsequent commands.
+
+## 4. Inspect the current session state
+
+Once the session is resolved, inspect both:
+
+`learnkit status --session <session_id> --json`
+
+and, when its material is relevant:
+
+`learnkit session show <session_id> --json`
+
+Use the status as the source of truth for phase/item state.
+
+Do not infer that a phase is complete merely because files exist.
+
+Do not mark phases complete manually.
+
+## 5. Inspect sources and inventory
+
+Determine whether the session already contains the material required for the user's request.
+
+Sources may include:
+
+- notes;
+- audio;
+- images;
+- transcripts;
+- worksheets;
+- other class material.
+
+When new files have been supplied for the session, ingest them using the supported CLI and run:
+
+`learnkit inventory --session <session_id>`
+
+Inventory is idempotent. Re-run it when source material may have changed.
+
+Never modify the inventory or source metadata manually.
+
+## 6. Resolve transcription prerequisites
+
+If the requested workflow requires understanding audio content, verify whether usable transcripts already exist.
+
+When audio requires transcription:
+
+- use LearnKit's transcription workflow when the required local tooling is available; or
+- import an existing transcript when the user has supplied one.
+
+Do not fabricate transcript content.
+
+Do not treat an audio source as analysed merely because it has been inventoried.
+
+When a transcript contains uncertain or unintelligible segments, preserve that uncertainty for downstream skills.
+
+## 7. Determine the next workflow action
+
+Use the user's actual goal together with the current session state.
+
+Examples:
+
+### User wants to analyse the class
+
+Ensure required sources are inventoried and required audio is transcribed.
+
+Then delegate the pedagogical analysis to `learnkit-analyse`.
+
+Do not reproduce its analysis logic here.
+
+### User wants vocabulary
+
+Ensure the session material is available.
+
+Delegate lexical extraction and confirmation to `learnkit-language`.
+
+Do not automatically persist vocabulary from this orchestrator.
+
+### User wants cards or Anki
+
+Check the prerequisites required by the card workflow.
+
+Do not silently invent vocabulary merely to unblock card generation.
+
+Use the existing confirmed learning items.
+
+Delegate image judgement to the appropriate image skill when needed.
+
+### User wants an exam
+
+Check the prerequisites required by the assessment workflow and invoke the supported LearnKit commands.
+
+### User only wants to add new class material
+
+Ingest and inventory the material.
+
+Do not automatically run analysis, vocabulary extraction, cards, or assessments unless the user's request implies that broader processing.
+
+## 8. Respect completed and pending work
+
+LearnKit operations are designed to be resumable and idempotent.
+
+Do not redo work that the current status reports as complete and current unless:
+
+- the source material changed;
+- the user explicitly requests regeneration;
+- the corresponding workflow determines that an update is necessary.
+
+When an item is `pending`, continue the appropriate workflow.
+
+When an item is `pending_user_decision`, do not silently skip it or fabricate content.
+
+Surface the stored reason and obtain the required explicit decision when necessary.
+
+Independent work that is not blocked may continue when the LearnKit workflow permits it.
+
+## 9. Handle command failures by category
+
+Whenever possible, use structured JSON output and inspect the error code/state.
+
+Do not treat every `ok: false` as a broken generated file.
+
+Classify the failure first.
+
+Typical cases include:
+
+### Missing prerequisite
+
+Run the missing supported prerequisite when it is safe and unambiguous.
+
+Then retry the original operation.
+
+### Invalid generated artifact
+
+Correct the generated artifact using the skill responsible for producing it, then retry its LearnKit command.
+
+### Pending user decision
+
+Do not resolve it automatically.
+
+Explain the concrete pending decision.
+
+### External dependency failure
+
+Examples include unavailable transcription tooling, network access, or TTS failure.
+
+Report the actual dependency failure and preserve the session state.
+
+### Unsupported or inconsistent state
+
+Do not edit `.learnkit/` directly to force progress.
+
+Report the structured error and use only supported recovery commands.
+
+## 10. Preserve source boundaries
+
+Never mix source material from unrelated LearnKit sessions.
+
+Never move learning content between sessions merely because the topics appear similar.
+
+A session is the boundary for the class material being processed unless the user explicitly requests another operation supported by LearnKit.
+
+## 11. Re-check state after mutations
+
+After meaningful state-changing operations, use the relevant LearnKit status/read command to verify the resulting state.
+
+Do not claim that an operation completed based only on intention or file creation.
+
+The persisted LearnKit state is authoritative.
+
+## 12. Report the session state
+
+After completing the requested work, give a concise report containing the relevant parts of:
+
+- resolved `session_id`;
+- sources added or updated;
+- transcription state;
+- analysis state;
+- delegated workflow completed;
+- pending items;
+- explicit user decisions still required;
+- external dependency failures, if any.
+
+Do not dump the complete internal checklist unless it is useful to the user.
+
+## Core orchestration principle
+
+The orchestrator answers:
+
+> What does this session need next to satisfy the user's request?
+
+It should not answer:
+
+> How should every specialised LearnKit artefact be generated?
+
+That responsibility belongs to the specialised skills.
+
+Prefer:
+
+**inspect → resolve prerequisites → delegate → verify**
+
+over duplicating domain logic inside this skill.

@@ -136,6 +136,65 @@ mod tests {
         }
     }
 
+    /// Builds a `size`x`size` test image divided into `n`x`n` distinctly
+    /// colored square quadrants, in reading order — same palette scheme as
+    /// `sixteen_quadrant_image`, generalized to any grid size so 3x3/2x2 can
+    /// reuse the same reading-order pixel spot-check (v2 refinement: grid
+    /// size is not fixed at 4x4, per `crop_grid`'s `rows`/`cols` params).
+    fn n_quadrant_image(n: u32, cell: u32) -> RgbaImage {
+        let mut img = RgbaImage::new(n * cell, n * cell);
+        for row in 0..n {
+            for col in 0..n {
+                let index = row * n + col;
+                let color = expected_color(index);
+                for y in (row * cell)..(row * cell + cell) {
+                    for x in (col * cell)..(col * cell + cell) {
+                        img.put_pixel(x, y, color);
+                    }
+                }
+            }
+        }
+        img
+    }
+
+    #[test]
+    fn crop_grid_produces_9_crops_in_reading_order_for_a_3x3_grid() {
+        let img = DynamicImage::ImageRgba8(n_quadrant_image(3, 100));
+
+        let crops = crop_grid(&img, 3, 3);
+
+        assert_eq!(crops.len(), 9);
+        for (index, crop) in crops.iter().enumerate() {
+            assert_eq!(crop.width(), 100);
+            assert_eq!(crop.height(), 100);
+            let pixel = crop.get_pixel(50, 50);
+            assert_eq!(
+                pixel,
+                expected_color(index as u32),
+                "crop {index} has the wrong color (reading-order bug?)"
+            );
+        }
+    }
+
+    #[test]
+    fn crop_grid_produces_4_crops_in_reading_order_for_a_2x2_grid() {
+        let img = DynamicImage::ImageRgba8(n_quadrant_image(2, 100));
+
+        let crops = crop_grid(&img, 2, 2);
+
+        assert_eq!(crops.len(), 4);
+        for (index, crop) in crops.iter().enumerate() {
+            assert_eq!(crop.width(), 100);
+            assert_eq!(crop.height(), 100);
+            let pixel = crop.get_pixel(50, 50);
+            assert_eq!(
+                pixel,
+                expected_color(index as u32),
+                "crop {index} has the wrong color (reading-order bug?)"
+            );
+        }
+    }
+
     #[test]
     fn crop_grid_truncates_cell_size_when_not_evenly_divisible() {
         let img = DynamicImage::ImageRgba8(RgbaImage::new(401, 401));

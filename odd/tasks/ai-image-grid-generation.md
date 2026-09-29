@@ -180,3 +180,34 @@ Sin cambios en la búsqueda/descarga (`WikimediaCommonsProvider`, ya con resize 
 - Sin commits creados en este segundo bloque tampoco (instrucción explícita
   del encargo) ni `cargo install` ejecutado — feature T0-T9 completa, lista
   para revisión/commit.
+
+## v2 — refinamiento sobre la misma feature (2026-09-29)
+
+**Tracked as**: continuación de esta misma identidad de feature (no una nueva) — refina el mecanismo ya construido en T0-T9, no cambia su arquitectura. Rama: `visual-pipeline-v2`.
+
+### Por qué
+
+David pasó una spec detallada (paste completo, ver mem_save de la sesión) pidiendo: mantener Wikimedia como fuente válida, generación como fallback, y el agente (nunca la CLI) haciendo el juicio semántico/pedagógico — es decir, exactamente el principio ya establecido arriba, pero señala huecos concretos en la implementación T0-T9:
+
+1. `image-batch`/`image-review` solo devuelven `learning_item_id`/`title`/`card_id` — sin `sense`/ejemplos, obligando al agente a adivinar significados ambiguos (`bank`, `charge`, `stress`...).
+2. El grid crop ya soporta filas/columnas variables (`crop_grid(rows, cols)`, `crates/learnkit-media/src/grid.rs`) pero solo estaba probado/documentado para 4x4 — faltan tests explícitos de 3x3/2x2 y guía sobre cuándo usar cada tamaño.
+3. `GRID_PROVIDER = "chatgpt-grid-manual"` (`cards_image.rs`) ata el nombre interno a un proveedor concreto, contra el principio de independencia de proveedor (§8 de la spec).
+4. El nuevo skill `learnkit-image-prompts` (ver commit `9cd9676`) ya refleja toda esta filosofía — esta sección es el trabajo Rust que falta para que el skill pueda cumplir lo que promete.
+
+### Alcance de este refinamiento
+
+- Enriquecer `ImageBatchItem`/`ImageReviewItem` (`crates/learnkit-cli/src/commands/cards_image.rs`) con `sense`/`examples` opcionales, derivados de `item.summary` (ya disponible sin lookup extra) y de `VocabularyEntry.examples` vía `item.vocabulary_entry_id` (mismo patrón que `cards.rs::build_image_to_production_blocks` ya usa) — solo cuando existan, sin inventar campos vacíos.
+- Renombrar `GRID_PROVIDER` a algo genérico (p. ej. `"external-grid-manual"`) — cambio de rótulo únicamente, no de comportamiento.
+- Tests explícitos para `crop_grid`/`image-grid crop` con 3x3 y 2x2 (además del 4x4 ya cubierto), verificando conteo de recortes y orden de lectura.
+- Actualizar `docs/manual.md`/`docs/manual.html` para reflejar el nuevo campo de contexto semántico y la guía de tamaño de grid variable (4x4/3x3/2x2 según densidad de detalle).
+- No tocar: `image-grid assign`/`image-reject` (ya cumplen la spec sin cambios, verificado en exploración), ni el modelo `Card`/`CardSpec` (eso es la feature separada de generalización de cards).
+
+### Progreso
+
+- Skills sincronizados primero (commit `9cd9676`, ver más arriba en la sesión): los 5 SKILL.md actualizados, `learnkit-cards` añadido como skill nuevo. `learnkit-analyse` recibió una corrección de sintaxis (comandos `analyse set --item` en vez de los tres comandos eliminados en el commit `957e7fe`), verificada contra el código real de `analyse.rs` antes de aplicar.
+- **Resto del alcance completado** (`crates/learnkit-cli/src/commands/cards_image.rs`, `crates/learnkit-media/src/grid.rs`, `crates/learnkit-cli/tests/cards_image_test.rs`, `docs/manual.md`, `docs/manual.html`):
+  - `ImageBatchItem`/`ImageReviewItem` ganan `sense: Option<String>` (desde `item.summary`) y `examples: Option<Vec<String>>` (desde `VocabularyEntry::examples` vía `find_by_id` — mismo patrón que `cards.rs::build_image_to_production_blocks`), ambos con `skip_serializing_if = "Option::is_none"` para no ensuciar el JSON cuando no hay nada. Nueva función compartida `semantic_context(root, item)` en `cards_image.rs`; el lookup de vocabulario es best-effort (un `VocabularyEntry` ausente o corrupto nunca hace fallar `image-batch`/`image-review`, solo omite `examples`).
+  - `GRID_PROVIDER` renombrado de `"chatgpt-grid-manual"` a `"external-grid-manual"` — solo el valor del string (rótulo persistido en `AssetOrigin::GeneratedGrid`), la constante de Rust sigue llamándose igual. No había ningún test que asertara el valor literal antiguo como salida real de `image-grid assign` (los dos usos de `"chatgpt-grid-manual"` en `cards_image_test.rs`/`asset.rs` eran valores arbitrarios de fixture para otros escenarios, no aserciones sobre el rótulo — se dejaron intactos).
+  - Tests nuevos de `crop_grid`/`image-grid crop` para 3x3 (9 recortes) y 2x2 (4 recortes), a nivel unitario en `grid.rs` (`crop_grid_produces_9_crops_in_reading_order_for_a_3x3_grid`, `crop_grid_produces_4_crops_in_reading_order_for_a_2x2_grid`) y a nivel de integración CLI en `cards_image_test.rs` (`image_grid_crop_produces_9_crops_in_reading_order_for_a_3x3_grid`, `image_grid_crop_produces_4_crops_in_reading_order_for_a_2x2_grid`), verificando conteo, orden de lectura (vía color por casilla) y patrón de nombre de fichero — mismo patrón que el test 4x4 ya existente.
+  - `docs/manual.md` y `docs/manual.html` actualizados en paralelo (no hay paso de generación automática entre ellos, se mantienen sincronizados a mano como en commits anteriores): nota sobre `sense`/`examples` en `image-batch`/`image-review`, y nota de que el tamaño de rejilla no está fijado a 4x4 (3x3/2x2 preferibles para visuales densos), en la prosa de la sección §8 y en la tabla de referencia de comandos.
+  - `cargo build --workspace --all-targets` y `cargo test --workspace` verificados en verde tras todos los cambios.
