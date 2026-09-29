@@ -8,6 +8,7 @@ pub mod consolidate;
 pub mod export;
 pub mod export_anki;
 pub mod export_study_guide;
+pub mod export_study_pack;
 pub mod init;
 pub mod inventory;
 pub mod learn;

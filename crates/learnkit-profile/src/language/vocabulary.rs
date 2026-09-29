@@ -111,6 +111,15 @@ fn save(project_root: &Path, entry: &VocabularyEntry) -> std::io::Result<()> {
     learnkit_core::atomic::write_atomic(&path, yaml.as_bytes())
 }
 
+/// Lists every persisted `VocabularyEntry`, project-wide — used by
+/// `learnkit export study-pack` (`odd/tasks/language-study-pack.md` T8) to
+/// populate the "Vocabulario"/"Expresiones" tabs. Minimal public wrapper
+/// around the existing private `load_all`; no change to the data model or
+/// persistence format.
+pub fn list_all(project_root: &Path) -> std::io::Result<Vec<VocabularyEntry>> {
+    load_all(project_root)
+}
+
 /// Finds an existing entry with the same normalized `lemma`, project-wide
 /// (vocabulary survives across sessions — FR-011).
 pub fn find_by_lemma(project_root: &Path, lemma: &str) -> std::io::Result<Option<VocabularyEntry>> {
