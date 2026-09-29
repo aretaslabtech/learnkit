@@ -76,7 +76,7 @@ No existe, hay que construirlo:
 - [x] T3 `pronunciation.rs`: entidad + persistencia + CLI (`learn pronunciation set/remove`) + tests.
 - [x] T4 `level.rs`: entidad + persistencia + CLI (`learn level set/show`) + tests.
 - [x] T5 Guarda anti-mojibake aplicada a T1-T4.
-- [ ] T6 `learnkit-language/SKILL.md` actualizado (diálogos, pronunciación, nivel, vocabulario enriquecido, gramática vía ConceptPage). `learnkit-analyse/SKILL.md` sin tocar.
+- [x] T6 `learnkit-language/SKILL.md` actualizado (diálogos, pronunciación, nivel, vocabulario enriquecido, gramática vía ConceptPage). `learnkit-analyse/SKILL.md` sin tocar.
 - [ ] T7 Dependencia `rust_xlsxwriter` añadida a `learnkit-cli`.
 - [ ] T8 Comando `export study-pack` — las 10 pestañas.
 - [ ] T9 Tests de integración del exportador.
@@ -99,3 +99,15 @@ No existe, hay que construirlo:
 - Verificación real ejecutada: `cargo build --workspace --all-targets` verde; `cargo test --workspace` verde (todos los tests preexistentes + los nuevos, incluidos los 3 ficheros de integración nuevos ejecutados también de forma aislada); `cargo clippy --workspace --all-targets` verde, sin warnings.
 - Commit(s) de trabajo pendientes de crear en `language-study-pack` tras esta actualización del documento (Conventional Commits, sin `cargo install`, sin push, sin merge).
 - Fase B (Skill) y Fase C (exportador `.xlsx`) quedan **fuera de este trabajo**, sin tocar.
+
+**2026-09-29 (Fase B completa, T6)**: `crates/learnkit-agent/templates/skills/learnkit-language/SKILL.md` ampliado con 5 secciones nuevas (19-23), insertadas entre la antigua sección 18 ("Keep extraction and Anki selection separate") y la de cierre ("Final quality check", renumerada a 24), leído el fichero Rust real de cada capacidad antes de escribir cada comando/flag:
+
+- **19. Dialogues**: cuándo crear uno, distinción dura `--origin class` (ocurrió en sesión, reconstruido de fuentes) vs `--origin added` (consolidación con estructuras ya vistas, nunca gramática nueva), nunca marcar `class` un diálogo inventado (mismo principio que "nunca inventar que el profesor dijo algo"), nunca persistir sin confirmación explícita. Sintaxis exacta verificada contra `crates/learnkit-cli/src/commands/learn.rs` (`run_dialogue_set`/`parse_dialogue_line`): `--origin` literalmente `class`/`added` (no los nombres del enum Rust `from_class`/`added_for_consolidation`), `--line` repetible ≥2, separado por el primer `": "` literal.
+- **20. Pronunciación — pares mínimos**: cuándo un par merece registrarse (contraste fonético real y relevante para hispanohablante), IPA británico en ambos miembros, la nota explica el contraste (no repite la transcripción), aclarado como mecanismo distinto y complementario a la guía de IPA de palabra única ya existente (sección 9).
+- **21. Nivel acumulado**: ejecutar `learn level show` antes de generar contenido nuevo, "nivel desconocido" si no hay nada guardado (nunca asumir alto/bajo), nunca introducir estructuras muy por encima del nivel, proponer actualización al final de sesión sin auto-confirmar (mismo patrón que vocabulario).
+- **22. Vocabulario enriquecido**: `--topic` (agrupar por tema pedagógico) y `--notes` (irregularidades, falsos amigos, confusiones, registro) en `vocabulary add`/`edit`, mismo patrón de confirmación.
+- **23. Gramática vía `ConceptPage`**: explícito que este skill NO añade ningún comando nuevo para gramática — remite a `analyse set --item page:<id>` de `learnkit-analyse` para el mecanismo, y limita esta sección a guía de contenido (concepto en una frase, estructura, 3-6 ejemplos con vocabulario conocido, un error frecuente de hispanohablante).
+- Checklist de la sección "Final quality check" (ahora 24) ampliado con 4 puntos nuevos cubriendo diálogos/pares mínimos/nivel/confirmación.
+- Desviación de detalle respecto al enunciado original: ninguna — todos los comandos/flags coincidieron exactamente con lo descrito (`--origin class|added`, `--line` repetible parseado por `": "`, `--word-a/--ipa-a/--word-b/--ipa-b`, `learn level set/show`, `--topic`/`--notes` en vocabulary).
+- Verificación: relectura completa del `SKILL.md` tras la edición, sin contradicciones con las reglas duras existentes (nunca inventar que el profesor dijo algo, nunca persistir sin confirmación). `git diff --stat` confirma que solo se tocó `crates/learnkit-agent/templates/skills/learnkit-language/SKILL.md`; `learnkit-analyse/SKILL.md` no aparece en el diff. No aplica build/test (solo Markdown).
+- Ruta: delegado direct (subagente único, ficheros Rust de lectura + 1 fichero Markdown de escritura).

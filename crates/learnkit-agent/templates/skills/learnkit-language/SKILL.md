@@ -519,7 +519,113 @@ This skill is responsible for identifying and persisting language-learning items
 
 Card construction, images, audio, and export belong to the corresponding LearnKit workflows.
 
-## 19. Final quality check
+## 19. Dialogues
+
+A dialogue is a distinct kind of learning item from vocabulary: a short spoken exchange worth keeping as a reusable unit rather than breaking apart into loose words.
+
+Create a dialogue when the session worked a real communicative situation — introducing yourself, saying goodbye, asking for something, ordering, apologising — and that exchange is worth preserving as a whole.
+
+Do not fragment a genuine dialogue into separate vocabulary entries merely because it also contains useful words; add those words to vocabulary too, but persist the exchange itself as a dialogue.
+
+### `--origin class` vs `--origin added`
+
+Every dialogue has an origin, and the two are not interchangeable:
+
+- `--origin class` — the dialogue, or something very close to it, actually happened in the session. Reconstruct it from the transcript, notes, or other session material.
+- `--origin added` — the agent (or the user) writes it afterwards to consolidate or link structures already seen in the session. It never happened verbatim in class.
+
+Never mark a dialogue `class` when you authored it or reconstructed it loosely from disconnected fragments. This is the same hard rule that already governs this skill for vocabulary: never invent that the teacher said something they did not say. A `class` dialogue must be traceable to the session material the same way a vocabulary item's source must be.
+
+An `added` dialogue must use only structures already confirmed in the session (or already part of the accumulated level — see below). Never introduce new grammar or vocabulary just to make an added dialogue read naturally; if the session hasn't covered it yet, leave it out or simplify the exchange instead.
+
+### Persisting a dialogue
+
+Never persist a dialogue without the user's explicit confirmation, exactly as with vocabulary. Presenting a reconstructed or proposed dialogue is not confirmation.
+
+Once confirmed:
+
+```
+learnkit learn dialogue set --session <session_id> --id <dialogue_id> --origin class --line "Teacher: What's your name?" --line "Student: My name is Ana." [--note "..."]
+```
+
+- `--origin` is `class` or `added` — nothing else.
+- `--line` is repeatable and required at least twice; each one is `"Speaker: text"`, split on the first literal `": "` — the speaker label must not itself contain `": "`.
+- `--note` is optional, free text (e.g. what the dialogue is drilling).
+- `learn dialogue set` upserts by `--id`: reuse the same `--id` to correct or extend an existing dialogue rather than creating a duplicate.
+
+To remove one:
+
+```
+learnkit learn dialogue remove --session <session_id> --id <dialogue_id>
+```
+
+## 20. Pronunciation — minimal pairs
+
+This is a different, complementary mechanism from the IPA guidance in section 9. Section 9 is about the pronunciation of a single word. A minimal pair is about an explicit contrast between two words.
+
+Register a minimal pair when two words worked in the session — or one worked and another clearly confusable with it — differ by a real, pedagogically relevant phonetic contrast for a Spanish speaker: long vs short vowels, diphthongs vs pure vowels, endings like `-teen` vs `-ty`, and similar recurring sources of confusion.
+
+Do not register random pairs with no relevance to the session. The contrast must be something the learner is actually likely to confuse.
+
+Use British IPA for both members of the pair, consistent with the rest of this skill.
+
+The note should explain, in one sentence, what to remember about the contrast — not repeat the transcription. For example, "long vs short /i/", not "/ʃiːts/ vs /ʃɪts/".
+
+Never persist a minimal pair without the user's explicit confirmation.
+
+```
+learnkit learn pronunciation set --session <session_id> --id <pair_id> --word-a "sheets" --ipa-a "ʃiːts" --word-b "shits" --ipa-b "ʃɪts" --note "long vs short /i/"
+```
+
+`learn pronunciation set` upserts by `--id`. To remove one:
+
+```
+learnkit learn pronunciation remove --session <session_id> --id <pair_id>
+```
+
+## 21. Accumulated level
+
+Before generating any new content for the session — an added dialogue, a new example, extra vocabulary — check the accumulated level:
+
+```
+learnkit learn level show
+```
+
+If no level has ever been saved, treat it as "unknown level." Do not assume it is low or high; base new content only on what the session itself demonstrates.
+
+Never introduce structures far above the read level (or, with no saved level, far above what the session demonstrates) when creating new content — this applies directly to added dialogues (section 19) and to any example or extra vocabulary you generate.
+
+At the end of the session, if the material worked plausibly suggests the level has advanced (e.g. A1 to A1+, or A1 to A2), you may propose an update to the user. Never run `learn level set` without the user's explicit confirmation first — same confirmation pattern this skill already uses for vocabulary.
+
+```
+learnkit learn level set --language en --variety en-GB --level A2 --notes "confident with present simple, still shaky on past tense questions"
+```
+
+`--notes` is optional.
+
+## 22. Enriched vocabulary — `--topic` and `--notes`
+
+`learn vocabulary add` and `learn vocabulary edit` also accept:
+
+- `--topic "<text>"` — the pedagogical topic or unit this entry belongs to (e.g. "Meet & Greet", "Numbers", "Classroom"). Use it to group the session's vocabulary by concept so "what was learned today" can be reconstructed by topic instead of only chronologically.
+- `--notes "<text>"` — observations that don't fit `--sense`/`--ipa`/`--example`: an irregular plural, a false friend, a word it's commonly confused with, formal/informal register, a usage nuance.
+
+Both are optional and follow the same confirmation rule as every other field: propose, never persist without the user's explicit confirmation.
+
+## 23. Grammar — use `analyse`'s `ConceptPage`, not a new entity
+
+This skill does not introduce any new command for grammar. Grammar explanations continue to live in `analyse set --item page:<id>` (the generic `learnkit-analyse` skill) — `learnkit-language` only adds guidance on what a good language grammar page should contain. It does not duplicate or reimplement the `ConceptPage`/`filled_gaps` mechanism; for that mechanism, see the `learnkit-analyse` skill.
+
+A good grammar page for a language session should have:
+
+- the concept explained in one sentence;
+- the structure (e.g. "I am... / You are...");
+- between 3 and 6 examples, built with vocabulary already known from the session;
+- one explicit, predictable "common mistake" for a Spanish speaker.
+
+As with every other language-learning item in this skill, never persist a grammar page without the user's explicit confirmation.
+
+## 24. Final quality check
 
 Before presenting or persisting candidates, verify:
 
@@ -539,7 +645,11 @@ Before presenting or persisting candidates, verify:
 - uncertainty is not hidden;
 - source and locator are genuine;
 - model-inferred usefulness is distinguished from explicit teaching intent;
-- the item has actual learning value.
+- the item has actual learning value;
+- any dialogue marked `--origin class` genuinely happened in the session, and any `--origin added` dialogue uses only already-confirmed structures;
+- any minimal pair reflects a real, session-relevant phonetic contrast, with a note that explains the contrast rather than repeating the IPA;
+- the accumulated level (`learn level show`) was checked before generating new content, and nothing generated sits far above it;
+- nothing above was persisted without the user's explicit confirmation.
 
 The objective is not to maximise or minimise the number of vocabulary entries.
 
