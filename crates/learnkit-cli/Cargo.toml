@@ -32,6 +32,7 @@ dialoguer = { workspace = true }
 tempfile = { workspace = true }
 assert_cmd = "2"
 image = { workspace = true }
+serde_yaml = { workspace = true }
 
 [lints]
 workspace = true

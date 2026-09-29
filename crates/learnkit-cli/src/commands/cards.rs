@@ -10,13 +10,15 @@ use learnkit_core::output::Envelope;
 use learnkit_media::image::WikimediaCommonsProvider;
 use learnkit_media::resolve::{resolve_audio, resolve_image, ResolvedMedia};
 use learnkit_media::voice::RestVoiceProvider;
-use learnkit_profile::language::learning_item::LearningItem;
+use learnkit_profile::card_spec::{self, CardSpec};
+use learnkit_profile::language::learning_item::{self, LearningItem};
 use learnkit_profile::language::vocabulary::{find_by_id as find_vocabulary_by_id, VocabularyEntry};
 use learnkit_store::session_paths::SessionPaths;
 use serde::Serialize;
 use std::path::PathBuf;
 
 const IMAGE_TO_PRODUCTION_V1: &str = "image-to-production-v1";
+const VOCABULARY_KIND: &str = "vocabulary";
 
 #[derive(Args)]
 pub struct CardsArgs {
@@ -28,6 +30,7 @@ pub struct CardsArgs {
 enum CardsAction {
     Build(BuildArgs),
     Validate(ValidateArgs),
+    Set(SetArgs),
     ImageBatch(ImageBatchArgs),
     ImageGrid(ImageGridArgs),
     ImageReview(ImageReviewArgs),
@@ -59,6 +62,37 @@ struct ValidateArgs {
     path: Option<PathBuf>,
     #[arg(long)]
     json: bool,
+}
+
+/// `learnkit cards set` — generic (non-vocabulary) `CardSpec` upsert
+/// (`odd/tasks/cardspec-generalization.md` T3). Vocabulary items keep using
+/// `learn vocabulary add`/`edit`; this is for every other `LearningItem`
+/// `kind` (grammar, dialogue, a C# enum, a Clean Code rubric, geography...).
+#[derive(Args)]
+struct SetArgs {
+    /// The `LearningItem.id` this `CardSpec` belongs to. Must already exist.
+    #[arg(long = "item")]
+    item: String,
+    #[arg(long)]
+    activity: String,
+    #[arg(long)]
+    stimulus: String,
+    #[arg(long)]
+    response: String,
+    #[arg(long)]
+    feedback: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct SetData {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_spec_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    learning_item_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,11 +130,84 @@ pub fn run(args: CardsArgs) -> i32 {
     match args.action {
         CardsAction::Build(a) => run_build(a),
         CardsAction::Validate(a) => run_validate(a),
+        CardsAction::Set(a) => run_set(a),
         CardsAction::ImageBatch(a) => cards_image::run_image_batch(a),
         CardsAction::ImageGrid(a) => cards_image::run_image_grid(a),
         CardsAction::ImageReview(a) => cards_image::run_image_review(a),
         CardsAction::ImageReject(a) => cards_image::run_image_reject(a),
     }
+}
+
+/// `learnkit cards set --item <learning_item_id> --activity <str> --stimulus
+/// <str> --response <str> [--feedback <str>]` — upserts the generic
+/// `CardSpec` a non-vocabulary `LearningItem` needs before `cards build` can
+/// generate a card for it (T3/T4/T5).
+fn run_set(args: SetArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+
+    let item = match learning_item::find_by_id(&root, &args.item) {
+        Ok(Some(item)) => item,
+        Ok(None) => {
+            return emit_set_error(
+                args.json,
+                LearnKitError::ExporterConstraint {
+                    message: format!("learning item '{}' does not exist", args.item),
+                },
+            )
+        }
+        Err(source) => {
+            return emit_set_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    let spec = match card_spec::set(
+        &root,
+        &item.id,
+        &args.activity,
+        &args.stimulus,
+        &args.response,
+        args.feedback.as_deref(),
+    ) {
+        Ok(spec) => spec,
+        Err(source) => {
+            return emit_set_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    if args.json {
+        Envelope::ok(
+            "CARD_SPEC_SET",
+            SetData {
+                card_spec_id: Some(spec.id),
+                learning_item_id: Some(spec.learning_item_id),
+            },
+        )
+        .print_json();
+    } else {
+        println!("{}\t{}", spec.id, spec.learning_item_id);
+    }
+    0
+}
+
+fn emit_set_error(json: bool, err: LearnKitError) -> i32 {
+    if json {
+        Envelope::err(err.code(), SetData::default()).print_json();
+    } else {
+        eprintln!("Error: {err}");
+    }
+    err.exit_code()
 }
 
 fn run_build(args: BuildArgs) -> i32 {
@@ -187,56 +294,204 @@ fn run_build(args: BuildArgs) -> i32 {
             }
         }
 
+        // Generalization (`cardspec-generalization` T4/T5): a `vocabulary`
+        // item keeps sourcing text/media exactly as before (untouched
+        // below). Any other `kind` needs its `CardSpec` — normal, non-BLOCKED
+        // error (not a Hard Guards guard: a concrete item without content,
+        // not "zero vocabulary project-wide") when it hasn't been set yet via
+        // `cards set`.
+        let generic_spec: Option<CardSpec> = if item.kind == VOCABULARY_KIND {
+            None
+        } else {
+            match card_spec::find_by_learning_item(&root, &item.id) {
+                Ok(Some(spec)) => Some(spec),
+                Ok(None) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::CardSpecMissing {
+                            learning_item_id: item.id.clone(),
+                        },
+                    )
+                }
+                Err(source) => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::Filesystem {
+                            path: root.display().to_string(),
+                            source,
+                        },
+                    )
+                }
+            }
+        };
+
         let (front_blocks, back_blocks) = if args.template == IMAGE_TO_PRODUCTION_V1 {
-            // FR-013b: front = image + pronunciation audio (both required);
-            // back = word + translation + IPA/example (when present) + the
-            // *same* pronunciation audio, resolved exactly once.
-            let image_asset_id = resolved_id(
-                resolve_image(&assets_dir, &item.title, None, &image_provider, |url| {
-                    download_via_provider(&image_provider, url)
-                }),
-                template.front_image,
-                &card_id,
-                "front",
-                "image",
-                &mut media_warnings,
-            );
-            let audio_asset_id = resolved_id(
-                resolve_audio(
-                    &assets_dir,
-                    pronunciation_source_text(&item),
-                    "en-GB",
-                    "project-default",
-                    None,
-                    &voice_provider,
-                ),
-                template.front_audio,
-                &card_id,
-                "front",
-                "audio",
-                &mut media_warnings,
-            );
+            if let Some(spec) = &generic_spec {
+                let image_asset_id = resolved_id(
+                    resolve_image(&assets_dir, &spec.stimulus, None, &image_provider, |url| {
+                        download_via_provider(&image_provider, url)
+                    }),
+                    template.front_image,
+                    &card_id,
+                    "front",
+                    "image",
+                    &mut media_warnings,
+                );
+                let audio_asset_id = resolved_id(
+                    resolve_audio(
+                        &assets_dir,
+                        &spec.stimulus,
+                        "en-GB",
+                        "project-default",
+                        None,
+                        &voice_provider,
+                    ),
+                    template.front_audio,
+                    &card_id,
+                    "front",
+                    "audio",
+                    &mut media_warnings,
+                );
 
-            let vocabulary_entry =
-                match find_vocabulary_by_id(&root, &item.vocabulary_entry_id) {
-                    Ok(v) => v,
-                    Err(source) => {
-                        return emit_error(
-                            args.json,
-                            LearnKitError::Filesystem {
-                                path: root.display().to_string(),
-                                source,
-                            },
-                        )
-                    }
-                };
+                build_image_to_production_blocks_generic(spec, image_asset_id, audio_asset_id)
+            } else {
+                // FR-013b: front = image + pronunciation audio (both required);
+                // back = word + translation + IPA/example (when present) + the
+                // *same* pronunciation audio, resolved exactly once.
+                let image_asset_id = resolved_id(
+                    resolve_image(&assets_dir, &item.title, None, &image_provider, |url| {
+                        download_via_provider(&image_provider, url)
+                    }),
+                    template.front_image,
+                    &card_id,
+                    "front",
+                    "image",
+                    &mut media_warnings,
+                );
+                let audio_asset_id = resolved_id(
+                    resolve_audio(
+                        &assets_dir,
+                        pronunciation_source_text(&item),
+                        "en-GB",
+                        "project-default",
+                        None,
+                        &voice_provider,
+                    ),
+                    template.front_audio,
+                    &card_id,
+                    "front",
+                    "audio",
+                    &mut media_warnings,
+                );
 
-            build_image_to_production_blocks(
-                &item,
-                vocabulary_entry.as_ref(),
-                image_asset_id,
-                audio_asset_id,
-            )
+                let vocabulary_entry =
+                    match find_vocabulary_by_id(&root, &item.vocabulary_entry_id) {
+                        Ok(v) => v,
+                        Err(source) => {
+                            return emit_error(
+                                args.json,
+                                LearnKitError::Filesystem {
+                                    path: root.display().to_string(),
+                                    source,
+                                },
+                            )
+                        }
+                    };
+
+                build_image_to_production_blocks(
+                    &item,
+                    vocabulary_entry.as_ref(),
+                    image_asset_id,
+                    audio_asset_id,
+                )
+            }
+        } else if let Some(spec) = &generic_spec {
+            let mut front_blocks = Vec::new();
+            if template.front_image != MediaPolicy::Disabled {
+                front_blocks.push(Block::Image {
+                    asset_id: resolved_id(
+                        resolve_image(
+                            &assets_dir,
+                            &spec.stimulus,
+                            None,
+                            &image_provider,
+                            |url| download_via_provider(&image_provider, url),
+                        ),
+                        template.front_image,
+                        &card_id,
+                        "front",
+                        "image",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+            if template.front_audio != MediaPolicy::Disabled {
+                front_blocks.push(Block::Audio {
+                    asset_id: resolved_id(
+                        resolve_audio(
+                            &assets_dir,
+                            &spec.stimulus,
+                            "en-GB",
+                            "project-default",
+                            None,
+                            &voice_provider,
+                        ),
+                        template.front_audio,
+                        &card_id,
+                        "front",
+                        "audio",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+
+            let mut back_blocks = vec![Block::Text {
+                value: spec.response.clone(),
+            }];
+            if let Some(feedback) = &spec.feedback {
+                back_blocks.push(Block::Text {
+                    value: feedback.clone(),
+                });
+            }
+            if template.back_audio != MediaPolicy::Disabled {
+                back_blocks.push(Block::Audio {
+                    asset_id: resolved_id(
+                        resolve_audio(
+                            &assets_dir,
+                            &spec.response,
+                            "en-GB",
+                            "project-default",
+                            None,
+                            &voice_provider,
+                        ),
+                        template.back_audio,
+                        &card_id,
+                        "back",
+                        "audio",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+            if template.back_image != MediaPolicy::Disabled {
+                back_blocks.push(Block::Image {
+                    asset_id: resolved_id(
+                        resolve_image(
+                            &assets_dir,
+                            &spec.stimulus,
+                            None,
+                            &image_provider,
+                            |url| download_via_provider(&image_provider, url),
+                        ),
+                        template.back_image,
+                        &card_id,
+                        "back",
+                        "image",
+                        &mut media_warnings,
+                    ),
+                });
+            }
+
+            (front_blocks, back_blocks)
         } else {
             let mut front_blocks = Vec::new();
             if template.front_image != MediaPolicy::Disabled {
@@ -546,6 +801,47 @@ fn build_image_to_production_blocks(
     (front_blocks, back_blocks)
 }
 
+/// Generic counterpart of `build_image_to_production_blocks` for a
+/// non-vocabulary `LearningItem` (`cardspec-generalization` T4): same
+/// front/back shape (image+audio front; text(s) + the same audio back), but
+/// sourced from `CardSpec.stimulus`/`response`/`feedback` instead of
+/// `item.title`/`item.summary`/`VocabularyEntry`.
+fn build_image_to_production_blocks_generic(
+    spec: &CardSpec,
+    image_asset_id: Option<String>,
+    audio_asset_id: Option<String>,
+) -> (Vec<Block>, Vec<Block>) {
+    let front_blocks = vec![
+        Block::Image {
+            asset_id: image_asset_id,
+        },
+        Block::Audio {
+            asset_id: audio_asset_id.clone(),
+        },
+    ];
+
+    let mut back_blocks = vec![
+        Block::Text {
+            value: spec.stimulus.clone(),
+        },
+        Block::Text {
+            value: spec.response.clone(),
+        },
+    ];
+
+    if let Some(feedback) = &spec.feedback {
+        back_blocks.push(Block::Text {
+            value: feedback.clone(),
+        });
+    }
+
+    back_blocks.push(Block::Audio {
+        asset_id: audio_asset_id,
+    });
+
+    (front_blocks, back_blocks)
+}
+
 fn to_card_state(card: &CardDefinition) -> CardState {
     match completeness(card) {
         Completeness::Complete => CardState {
@@ -826,6 +1122,97 @@ mod tests {
         });
 
         assert_eq!(front_audio, Some(None));
+        assert_eq!(front_audio, back_audio);
+    }
+
+    // --- cardspec-generalization T4/T6: the generic (non-vocabulary)
+    // counterpart of `build_image_to_production_blocks`, sourced from
+    // `CardSpec` instead of `item.title`/`item.summary`/`VocabularyEntry`. ---
+
+    fn spec_with(stimulus: &str, response: &str, feedback: Option<&str>) -> CardSpec {
+        CardSpec {
+            id: "cardspec-li-1".to_string(),
+            learning_item_id: "li-1".to_string(),
+            activity: "activity".to_string(),
+            stimulus: stimulus.to_string(),
+            response: response.to_string(),
+            feedback: feedback.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn generic_back_includes_stimulus_response_and_feedback_when_present() {
+        let spec = spec_with(
+            "She ___ to school every day.",
+            "goes",
+            Some("Third person singular present takes -s."),
+        );
+
+        let (_front, back) = build_image_to_production_blocks_generic(
+            &spec,
+            Some("img-1".to_string()),
+            Some("audio-1".to_string()),
+        );
+
+        let texts: Vec<&str> = back
+            .iter()
+            .filter_map(|b| match b {
+                Block::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            texts,
+            vec![
+                "She ___ to school every day.",
+                "goes",
+                "Third person singular present takes -s."
+            ]
+        );
+    }
+
+    #[test]
+    fn generic_back_omits_feedback_block_when_absent() {
+        let spec = spec_with("stimulus", "response", None);
+
+        let (_front, back) = build_image_to_production_blocks_generic(
+            &spec,
+            Some("img-1".to_string()),
+            Some("audio-1".to_string()),
+        );
+
+        let texts: Vec<&str> = back
+            .iter()
+            .filter_map(|b| match b {
+                Block::Text { value } => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(texts, vec!["stimulus", "response"]);
+    }
+
+    #[test]
+    fn generic_front_and_back_audio_blocks_share_the_identical_asset_id() {
+        let spec = spec_with("stimulus", "response", None);
+
+        let (front, back) = build_image_to_production_blocks_generic(
+            &spec,
+            Some("img-1".to_string()),
+            Some("audio-shared".to_string()),
+        );
+
+        let front_audio = front.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+        let back_audio = back.iter().find_map(|b| match b {
+            Block::Audio { asset_id } => Some(asset_id.clone()),
+            _ => None,
+        });
+
+        assert_eq!(front_audio, Some(Some("audio-shared".to_string())));
         assert_eq!(front_audio, back_audio);
     }
 }

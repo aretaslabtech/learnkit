@@ -70,6 +70,20 @@ pub fn find_by_vocabulary_entry(
     Ok(None)
 }
 
+/// Finds the persisted `LearningItem` with this exact `id`, if any — used by
+/// `learnkit cards set` to validate `--item` before upserting its
+/// `CardSpec`.
+pub fn find_by_id(project_root: &Path, id: &str) -> std::io::Result<Option<LearningItem>> {
+    let path = item_path(project_root, id);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&path)?;
+    let item: LearningItem = serde_yaml::from_str(&raw)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string()))?;
+    Ok(Some(item))
+}
+
 /// Creates (or reuses, if one already exists) the `LearningItem` linked to
 /// `vocab` — FR-010.
 pub fn ensure_for_vocabulary(
@@ -106,8 +120,15 @@ pub fn ensure_for_vocabulary(
 }
 
 /// Deletes the persisted `LearningItem` with this `id`, if any — FR-012c.
-/// Returns `false` (not an error) when it didn't exist.
+/// Also deletes its `CardSpec`, if any, so a generic (non-vocabulary) item
+/// never leaves an orphaned `CardSpec` behind (same cascade shape as
+/// `card.rs::remove` on vocabulary removal — `cardspec-generalization` T2).
+/// Returns `false` (not an error) when the `LearningItem` itself didn't
+/// exist; the `CardSpec` cascade runs regardless (there is nothing to
+/// distinguish there — a vocabulary item simply never has one).
 pub fn remove(project_root: &Path, id: &str) -> std::io::Result<bool> {
+    crate::card_spec::remove(project_root, id)?;
+
     let path = item_path(project_root, id);
     if !path.exists() {
         return Ok(false);
@@ -160,5 +181,39 @@ mod tests {
         let second = ensure_for_vocabulary(dir.path(), &vocab).unwrap();
 
         assert_eq!(first.id, second.id);
+    }
+
+    /// T2 (cardspec-generalization): removing a `LearningItem` also removes
+    /// its `CardSpec`, if any — same cascade shape as `card.rs::remove` on
+    /// vocabulary removal.
+    #[test]
+    fn removing_a_learning_item_cascades_to_its_card_spec() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::card_spec::set(
+            dir.path(),
+            "li-generic-1",
+            "activity",
+            "stimulus",
+            "response",
+            None,
+        )
+        .unwrap();
+
+        let removed = remove(dir.path(), "li-generic-1").unwrap();
+
+        // The LearningItem YAML itself was never written in this test, so
+        // `remove` correctly reports it wasn't there — but the cascade must
+        // still have run.
+        assert!(!removed);
+        assert_eq!(
+            crate::card_spec::find_by_learning_item(dir.path(), "li-generic-1").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn find_by_id_returns_none_for_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(find_by_id(dir.path(), "does-not-exist").unwrap(), None);
     }
 }
