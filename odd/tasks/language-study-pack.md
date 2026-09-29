@@ -77,11 +77,11 @@ No existe, hay que construirlo:
 - [x] T4 `level.rs`: entidad + persistencia + CLI (`learn level set/show`) + tests.
 - [x] T5 Guarda anti-mojibake aplicada a T1-T4.
 - [x] T6 `learnkit-language/SKILL.md` actualizado (diálogos, pronunciación, nivel, vocabulario enriquecido, gramática vía ConceptPage). `learnkit-analyse/SKILL.md` sin tocar.
-- [ ] T7 Dependencia `rust_xlsxwriter` añadida a `learnkit-cli`.
-- [ ] T8 Comando `export study-pack` — las 10 pestañas.
-- [ ] T9 Tests de integración del exportador.
-- [ ] T10 Documentación (`docs/manual.md`/`.html`).
-- [ ] T11 `cargo build/test/clippy --workspace` en verde; commits en `language-study-pack`; `cargo install` al cerrar.
+- [x] T7 Dependencia `rust_xlsxwriter` añadida a `learnkit-cli`.
+- [x] T8 Comando `export study-pack` — las 10 pestañas.
+- [x] T9 Tests de integración del exportador.
+- [x] T10 Documentación (`docs/manual.md`/`.html`).
+- [x] T11 `cargo build/test/clippy --workspace` en verde; commits en `language-study-pack` (sin `cargo install`, decisión pendiente de cierre completo de la feature).
 
 ## Progreso
 
@@ -99,6 +99,33 @@ No existe, hay que construirlo:
 - Verificación real ejecutada: `cargo build --workspace --all-targets` verde; `cargo test --workspace` verde (todos los tests preexistentes + los nuevos, incluidos los 3 ficheros de integración nuevos ejecutados también de forma aislada); `cargo clippy --workspace --all-targets` verde, sin warnings.
 - Commit(s) de trabajo pendientes de crear en `language-study-pack` tras esta actualización del documento (Conventional Commits, sin `cargo install`, sin push, sin merge).
 - Fase B (Skill) y Fase C (exportador `.xlsx`) quedan **fuera de este trabajo**, sin tocar.
+
+**2026-09-29 (Fase C completa, T7-T11 — feature CERRADA)**: Exportador `.xlsx` implementado y verificado, delegado a un subagente sobre `language-study-pack` (sin merges, sin tocar `master`).
+
+- **T7**: `rust_xlsxwriter` (`0.79`) añadido a `[workspace.dependencies]` en el `Cargo.toml` raíz y referenciado como `{ workspace = true }` en `crates/learnkit-cli/Cargo.toml` (mismo patrón que `serde_yaml`/`clap`). `calamine` (`0.26`) añadido como dev-dependency de `learnkit-cli` únicamente, para poder releer el `.xlsx` generado en los tests de integración (T9).
+- **T8**: `crates/learnkit-cli/src/commands/export_study_pack.rs` nuevo, registrado como `learnkit export study-pack --session <id> --out <fichero.xlsx> [--json] [--path]` en `export.rs` (mismo patrón que `Anki`/`StudyGuide`). Genera las 10 pestañas exactas en el orden pedido, reutilizando lectura ya existente: `learnkit_workflow::analysis::{read_summary,read_study_map,list_concept_pages}` para "Lo aprendido" (misma fuente que `export study-guide`, sin duplicar lógica de negocio — solo el formato de fila es nuevo), `learnkit_cards::card::load_all` para "Flashcards", `learnkit_assessment::item::{load_assessment,load_all_items}` para "Repaso"/"Soluciones" (mismo patrón que `export exam`), y las tres entidades nuevas de Fase A (`dialogue::load_all`, `pronunciation::load_all`, `level::show`) para sus pestañas.
+  - Única función nueva añadida a un módulo existente (permitido explícitamente cuando no hay lectura equivalente): `vocabulary::list_all` en `vocabulary.rs` — wrapper público mínimo sobre el `load_all` ya existente (privado), sin tocar el modelo de datos ni la persistencia.
+  - Falla con `LearnKitError::ExporterConstraint` (código `EXPORT_FAILED`, exit `40`) y no escribe ningún fichero cuando no hay absolutamente nada exportable en ninguna de las 10 categorías (mismo contrato que `export study-guide`/`export anki`). Con al menos una cosa exportable, genera el libro igual aunque otras pestañas queden solo con cabecera.
+  - **Decisiones de mapeo documentadas explícitamente en el propio código** (comentario de módulo en `export_study_pack.rs`) porque el modelo de datos actual no las especifica al 100%:
+    - **Vocabulario es de todo el proyecto, no de la sesión**: `VocabularyEntry` no tiene `session_id` (sobrevive entre sesiones — ver `vocabulary.rs`), y su única trazabilidad (`sources[].source_id`) apunta a un *source* de inventario, no a una sesión — cruzarlo de forma fiable exigiría recorrer inventarios de todas las sesiones, fuera de alcance. Se exporta **todo** el vocabulario del proyecto, igual que ya hacen `assessment build`/`cards build`. La columna "Sesión" de la pestaña Vocabulario lleva el id de la sesión *objetivo* del export (no un valor por entrada, que no existe).
+    - **"Traducción ejemplo"** (Vocabulario): sin campo dedicado en `Example` (solo `text`) — se deja vacía, nunca inventada.
+    - **Expresiones "Uso"/"Origen"**: `VocabularyEntry` no tiene marca literal de trabajado-en-clase-vs-añadido (a diferencia de `Dialogue`/`ConceptPage`). "Uso" vacío; "Origen" fijo a "Trabajado en clase" — simplificación documentada, no una traza real.
+    - **Fuente "Fecha"**: se usa `Session::created_at` tal cual (`format!("{:?}", SystemTime::now())`, no una fecha legible) — es el único timestamp que expone el modelo hoy; no se reformatea (sin crate de fecha/hora en el workspace, misma restricción que documentó T4 para `level.rs`).
+- **T9**: `crates/learnkit-cli/tests/export_study_pack_test.rs` nuevo. Un test monta una sesión con contenido real en summary, vocabulario (una entrada normal + una expresión), un diálogo, un par mínimo, una flashcard y un assessment item (mezcla del patrón CLI de `export_study_guide_test.rs` con las llamadas directas a `learnkit_cards::card::save`/`learnkit_assessment::item::save_item` de `export_anki_test.rs`, más llamadas directas a `dialogue::set`/`pronunciation::set`/`vocabulary::add_or_reuse` para las entidades sin atajo CLI usado en este test), exporta con la CLI real, y relee el `.xlsx` con `calamine` verificando las 10 pestañas en orden y contenido clave de cada una (incluyendo que "Repaso" nunca contiene `opt-a`, el id de la opción correcta). Segundo test: sesión totalmente vacía (proyecto nuevo, sin vocabulario) falla explícitamente y no escribe fichero.
+- **T10**: sección "Exportar el material didáctico completo a Excel (`study-pack`)" añadida en `docs/manual.md` y `docs/manual.html`, justo después de la sección existente de `export study-guide`, mismo estilo; fila añadida a la tabla de referencia de comandos en ambos ficheros.
+- **T11**: verificación real ejecutada por el propio agente (no asumida): `cargo build --workspace --all-targets` verde; `cargo clippy --workspace --all-targets` verde sin warnings (3 avisos `needless_borrows_for_generic_args` detectados y corregidos antes del clippy final); `cargo test --workspace` verde — 100% de los tests existentes más los 2 nuevos de `export_study_pack_test.rs` (verificado con conteo completo por fichero, sin fallos). `cargo install` explícitamente **no** ejecutado, como pidió el encargo — pendiente de decisión de cierre de la feature completa (Fases A+B+C).
+- Restricciones respetadas: `learnkit-agent/templates/skills/` no tocado; `learnkit-workflow::analysis` y `learnkit-profile::language::{dialogue,pronunciation,level}` no tocados (solo `vocabulary.rs` recibió la función de lectura nueva, mínima, documentada); sin modo TDD (checks funcionales ordinarios); ningún idioma nuevo en Alfabeto.
+- Ruta: delegado direct (subagente único; lectura de 12+ ficheros Rust existentes para mapear el modelo real antes de escribir, luego un módulo Rust nuevo + un fichero de test + dos ficheros de documentación).
+
+## Progreso final (Fases A + B + C)
+
+**Feature `language-study-pack` completa** (2026-09-29): las 11 tareas del checklist están `[x]`. Resumen end-to-end:
+
+- **Fase A** (modelo de datos): `VocabularyEntry.topic/notes`, `Dialogue`/`DialogueOrigin`/`DialogueLine`, `MinimalPair`, `LanguageLevel`, todos con persistencia atómica YAML, guarda anti-mojibake donde corresponde (nunca en IPA), y CLI completa (`learn vocabulary add/edit`, `learn dialogue set/remove`, `learn pronunciation set/remove`, `learn level set/show`).
+- **Fase B** (Skill): `learnkit-language/SKILL.md` ampliado con 5 secciones nuevas (diálogos, pronunciación, nivel acumulado, vocabulario enriquecido, gramática vía `ConceptPage`); `learnkit-analyse/SKILL.md` sin tocar, confirmado por `git diff --stat`.
+- **Fase C** (exportador): `learnkit export study-pack` genera el `.xlsx` de 10 pestañas descrito en el objetivo original, reutilizando toda la lectura ya existente de Fases A/B y de `analyse`/`assessment`/`cards`, con fallo explícito ante sesión totalmente vacía y tests de integración que abren el fichero real generado.
+- Estado del repositorio: todo el trabajo vive en la rama `language-study-pack` (nunca se tocó `master`), con commits Conventional Commits por fase; `cargo build/test/clippy --workspace` en verde en cada fase, verificado de forma real (no asumida) por el agente que la ejecutó. `cargo install` queda pendiente de una decisión explícita de cierre de la feature completa, tal y como pidió el encargo de Fase C.
+- Siguiente paso: David decide si cierra la feature (merge a `master`, `cargo install --path crates/learnkit-cli`, uso real) o pide ajustes adicionales sobre cualquiera de las tres fases.
 
 **2026-09-29 (Fase B completa, T6)**: `crates/learnkit-agent/templates/skills/learnkit-language/SKILL.md` ampliado con 5 secciones nuevas (19-23), insertadas entre la antigua sección 18 ("Keep extraction and Anki selection separate") y la de cierre ("Final quality check", renumerada a 24), leído el fichero Rust real de cada capacidad antes de escribir cada comando/flag:
 
