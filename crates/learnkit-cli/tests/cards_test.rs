@@ -350,6 +350,223 @@ fn cards_build_is_blocked_when_there_is_no_vocabulary() {
     assert_eq!(output["code"], "BLOCKED");
 }
 
+// --- cardspec-generalization (T6): `cards build` for a non-vocabulary
+// `LearningItem` sourced from its `CardSpec` — and proof the vocabulary path
+// stays byte-for-byte the same. There is no CLI to create a generic
+// `LearningItem` yet (out of scope, per odd/tasks/cardspec-generalization.md
+// §"Fuera de alcance"), so the fixture writes the YAML directly, exactly
+// where `learnkit_profile::language::learning_item` itself persists it. ---
+
+fn write_generic_learning_item(project_root: &std::path::Path, id: &str, kind: &str) {
+    let dir = project_root.join("knowledge").join("learning-items");
+    std::fs::create_dir_all(&dir).unwrap();
+    let item = learnkit_profile::language::learning_item::LearningItem {
+        id: id.to_string(),
+        kind: kind.to_string(),
+        title: "unused-for-a-non-vocabulary-item".to_string(),
+        summary: "unused-for-a-non-vocabulary-item".to_string(),
+        tags: vec![],
+        mastery_dimensions: vec![],
+        vocabulary_entry_id: String::new(),
+    };
+    let yaml = serde_yaml::to_string(&item).unwrap();
+    std::fs::write(dir.join(format!("{id}.yaml")), yaml).unwrap();
+}
+
+/// A generic (non-vocabulary) item with a `CardSpec` set via `cards set`
+/// builds a card whose text comes from `stimulus`/`response`/`feedback`,
+/// never from `item.title`/`item.summary` (which are deliberately garbage
+/// here — if the card used them, this test would fail).
+#[test]
+fn cards_build_uses_card_spec_content_for_a_non_vocabulary_item() {
+    let dir = tempfile::tempdir().unwrap();
+    learnkit().arg("init").arg(dir.path()).assert().success();
+    let out = learnkit()
+        .arg("session")
+        .arg("new")
+        .arg("Grammar unit")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let session_id = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["session_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    write_generic_learning_item(dir.path(), "li-grammar-1", "grammar");
+
+    learnkit()
+        .arg("cards")
+        .arg("set")
+        .arg("--item")
+        .arg("li-grammar-1")
+        .arg("--activity")
+        .arg("fill-in-the-blank")
+        .arg("--stimulus")
+        .arg("She ___ to school every day.")
+        .arg("--response")
+        .arg("goes")
+        .arg("--feedback")
+        .arg("Third person singular present takes -s.")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("build")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["cards"].as_array().unwrap().len(), 1);
+
+    let session_paths = learnkit_store::session_paths::SessionPaths::new(dir.path(), &session_id);
+    let cards = learnkit_cards::card::load_all(session_paths.root()).unwrap();
+    let card = &cards[0];
+    let back_texts: Vec<&str> = card
+        .back
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            learnkit_cards::card::Block::Text { value } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        back_texts,
+        vec![
+            "She ___ to school every day.",
+            "goes",
+            "Third person singular present takes -s."
+        ]
+    );
+}
+
+/// `cards build` on a non-vocabulary item with no `CardSpec` set yet must
+/// fail with a clear, specific error — never silently generate an empty
+/// card, and never the Hard Guards `BLOCKED`/exit-20 contract (that's
+/// reserved for "zero vocabulary project-wide" — this is a single concrete
+/// item missing its own content).
+#[test]
+fn cards_build_fails_clearly_for_a_non_vocabulary_item_without_a_card_spec() {
+    let dir = tempfile::tempdir().unwrap();
+    learnkit().arg("init").arg(dir.path()).assert().success();
+    let out = learnkit()
+        .arg("session")
+        .arg("new")
+        .arg("Grammar unit")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let session_id = serde_json::from_slice::<serde_json::Value>(&out).unwrap()["session_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    write_generic_learning_item(dir.path(), "li-grammar-no-spec", "grammar");
+
+    let assert = learnkit()
+        .arg("cards")
+        .arg("build")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .failure();
+
+    let output: serde_json::Value = serde_json::from_slice(&assert.get_output().stdout).unwrap();
+    assert_eq!(output["ok"], false);
+    assert_eq!(output["code"], "CARD_SPEC_MISSING");
+}
+
+/// Regression: a session mixing a vocabulary item and a generic item (with
+/// its `CardSpec` set) must build both, and the vocabulary card's content
+/// must be exactly what it was before this feature (word + translation,
+/// sourced from `item.title`/`item.summary`/`VocabularyEntry`, never
+/// touched by the `CardSpec` path).
+#[test]
+fn cards_build_handles_a_mixed_session_without_changing_the_vocabulary_card() {
+    let dir = tempfile::tempdir().unwrap();
+    let session_id = session_with_vocabulary(dir.path());
+
+    write_generic_learning_item(dir.path(), "li-grammar-mixed", "grammar");
+    learnkit()
+        .arg("cards")
+        .arg("set")
+        .arg("--item")
+        .arg("li-grammar-mixed")
+        .arg("--activity")
+        .arg("fill-in-the-blank")
+        .arg("--stimulus")
+        .arg("stimulus text")
+        .arg("--response")
+        .arg("response text")
+        .arg("--path")
+        .arg(dir.path())
+        .assert()
+        .success();
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("build")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .timeout(std::time::Duration::from_secs(30))
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["cards"].as_array().unwrap().len(), 2);
+
+    let session_paths = learnkit_store::session_paths::SessionPaths::new(dir.path(), &session_id);
+    let cards = learnkit_cards::card::load_all(session_paths.root()).unwrap();
+    let vocab_card = cards
+        .iter()
+        .find(|c| c.learning_item_ids.iter().any(|id| !id.contains("grammar")))
+        .unwrap();
+    let vocab_back_texts: Vec<&str> = vocab_card
+        .back
+        .blocks
+        .iter()
+        .filter_map(|b| match b {
+            learnkit_cards::card::Block::Text { value } => Some(value.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Same shape as `cards_build_produces_one_card_per_vocabulary_item` /
+    // `build_image_to_production_blocks`'s own unit tests: English word then
+    // translation, nothing from CardSpec.
+    assert_eq!(vocab_back_texts, vec!["whiteboard", "pizarra"]);
+}
+
 #[test]
 fn cards_build_works_for_preexisting_vocabulary_with_no_phase_manifest_history() {
     // Regresión explícita del caso real: vocabulario/tarjetas ya confirmados

@@ -287,6 +287,28 @@ Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tar
 
 **Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (en `image-to-production-v1` ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso `Optional` sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada.
 
+### 8.1 Tarjetas para contenido no-vocabulario (`CardSpec`)
+
+`cards build` no está limitado a vocabulario. Cualquier `LearningItem` cuyo `kind` no sea `"vocabulary"` (gramática, un diálogo, una enumeración de C#, una rúbrica de Clean Code, geografía...) también puede tener una tarjeta generada, siempre que exista un `LearningItem` para él (creado por otra vía — este comando no lo crea) y le des contenido con `cards set`:
+
+```bash
+learnkit cards set \
+  --item <learning_item_id> \
+  --activity "fill-in-the-blank" \
+  --stimulus "She ___ to school every day." \
+  --response "goes" \
+  --feedback "Tercera persona del singular en presente: añade -s." \
+  --json
+```
+
+- `--item` debe ser el `id` de un `LearningItem` ya existente — LearnKit lo valida y rechaza un id inexistente.
+- `--activity`/`--stimulus`/`--response` son obligatorios; `--feedback` es opcional.
+- Repetir el comando sobre el mismo `--item` reemplaza el `CardSpec` anterior (upsert, no acumula versiones).
+- `cards build` usa entonces `stimulus` como anverso y fuente de búsqueda de imagen/audio (en vez del `title` de vocabulario), y `response`/`feedback` como reverso (en vez de la traducción/IPA/ejemplo de `VocabularyEntry`) — la resolución de imagen (Wikimedia) y audio (TTS) es exactamente la misma que para vocabulario.
+- Si ejecutas `cards build` sobre un `LearningItem` no-vocabulario que todavía no tiene `CardSpec`, falla con un error claro (`CARD_SPEC_MISSING`) en vez de generar una tarjeta vacía en silencio — no es el bloqueo de Hard Guards de "vocabulario vacío" (§8), es un caso distinto: un elemento concreto sin contenido.
+- Borrar el `LearningItem` (por la vía que lo gestione) borra también su `CardSpec` asociado, igual que ya ocurre con las tarjetas de vocabulario al borrar una entrada de vocabulario.
+- El flujo de vocabulario existente (todo lo de arriba en esta sección) no cambia en absoluto — `CardSpec` es aditivo, solo entra en juego para `kind != "vocabulary"`.
+
 ### Revisar la coherencia de las imágenes de Wikimedia (opcional)
 
 `cards build` acepta la primera imagen de Wikimedia Commons con licencia reutilizable, sin comprobar si de verdad representa la palabra — es un paso extra, opcional y no bloqueante, para cuando quieras un control de calidad más fino (por ejemplo antes de exportar un mazo definitivo). Pídele a tu agente "revisa las imágenes de la sesión `<session_id>`" (usa la Skill `learnkit-image-prompts`, ver [§12](#12-usar-un-agente-claudecodex-para-sugerir-vocabulario)), o ejecútalo tú mismo:
@@ -436,8 +458,9 @@ arrancar cada mitad de este flujo.
 | `learnkit consolidate --session <id> [--json]` | Deriva y deduplica candidatos de vocabulario a partir del análisis. |
 | `learnkit consolidate list --session <id> [--json]` | Lista los candidatos ya persistidos de la sesión. |
 | `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual] [--ipa <ipa>] [--example <e>]...` | Confirma una entrada de vocabulario. `--ipa`/`--example` son opcionales y alimentan el reverso de la tarjeta. |
-| `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario. |
+| `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario (o, para un `LearningItem` no-vocabulario, de su `CardSpec` — ver [§8.1](#81-tarjetas-para-contenido-no-vocabulario-cardspec)). |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
+| `learnkit cards set --item <learning_item_id> --activity <a> --stimulus <s> --response <r> [--feedback <f>] [--json]` | Crea o reemplaza el `CardSpec` de un `LearningItem` no-vocabulario (upsert). |
 | `learnkit cards image-batch --session <id> [--limit 16] [--json]` | Lista hasta `--limit` tarjetas `pending_image` (id, palabra, tarjeta, y `sense`/`examples` cuando existen) para un lote de generación por rejilla (4x4, 3x3 o 2x2 según densidad de detalle). |
 | `learnkit cards image-grid crop --file <rejilla.png> --rows <R> --cols <C> --out-dir <dir> [--json]` | Recorta una imagen en rejilla R×C en imágenes individuales, en orden de lectura. |
 | `learnkit cards image-grid assign --session <id> --item <learning_item_id> --file <recorte.png> [--json]` | Asigna un recorte ya revisado como imagen del anverso de la tarjeta de ese elemento. |

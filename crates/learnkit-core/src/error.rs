@@ -62,6 +62,15 @@ pub enum LearnKitError {
     /// Never a judgment on prose quality (Principio IV) — purely structural.
     #[error("validation failed: {message}")]
     ValidationFailed { message: String },
+
+    /// `cards build` on a `LearningItem` whose `kind` isn't `"vocabulary"`
+    /// and has no `CardSpec` yet — a normal, expected error (a concrete item
+    /// simply has no content), never a Hard Guards `BLOCKED` (that's reserved
+    /// for "zero vocabulary project-wide" — `cardspec-generalization` T5).
+    #[error(
+        "learning item '{learning_item_id}' has no CardSpec — run 'learnkit cards set --item {learning_item_id} --activity <str> --stimulus <str> --response <str>' first"
+    )]
+    CardSpecMissing { learning_item_id: String },
 }
 
 impl LearnKitError {
@@ -81,6 +90,7 @@ impl LearnKitError {
             LearnKitError::Provider(_) => "PROVIDER_FAILED",
             LearnKitError::ExporterConstraint { .. } => "EXPORT_FAILED",
             LearnKitError::ValidationFailed { .. } => "VALIDATION_FAILED",
+            LearnKitError::CardSpecMissing { .. } => "CARD_SPEC_MISSING",
         }
     }
 
@@ -99,6 +109,7 @@ impl LearnKitError {
             LearnKitError::ExporterConstraint { .. } => 40,
             LearnKitError::ValidationFailed { .. } => 10,
             LearnKitError::Filesystem { .. } => 50,
+            LearnKitError::CardSpecMissing { .. } => 40,
         }
     }
 }
