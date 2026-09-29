@@ -10,7 +10,8 @@
 
 use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
-use learnkit_cards::card::{completeness, load_all, save, Block, CardDefinition, Completeness};
+use learnkit_cards::card::{load_all, save, Block, CardDefinition};
+use learnkit_cards::template::{find as find_template, MediaPolicy};
 use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
 use learnkit_media::asset::{self, AssetOrigin, AssetType};
@@ -254,7 +255,19 @@ pub fn run_image_batch(args: ImageBatchArgs) -> i32 {
         if batch.len() >= args.limit {
             break;
         }
-        if !matches!(completeness(card), Completeness::PendingImage { .. }) {
+        // Needs a front image whenever the template calls for one (Required
+        // *or* Optional — Disabled never does) and none is assigned yet.
+        // Deliberately NOT `completeness(card) == PendingImage`: that only
+        // fires for `Required`, so a card whose `Optional` front image was
+        // cleared by `image-reject` (`clear_front_image_asset` always clears
+        // it regardless of policy) would otherwise never be offered a
+        // replacement — `completeness` correctly still calls that card
+        // "complete" (an Optional slot never blocks it), but nothing should
+        // ever leave a rejected image unreplaced forever.
+        let wants_front_image = find_template(&card.template)
+            .map(|t| t.front_image != MediaPolicy::Disabled)
+            .unwrap_or(false);
+        if !wants_front_image || front_image_asset_id(card).is_some() {
             continue;
         }
         let Some(item_id) = card.learning_item_ids.first() else {

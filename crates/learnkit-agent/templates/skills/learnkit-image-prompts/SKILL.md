@@ -343,7 +343,15 @@ doesn't fit
 
 The rejection reason should help future attempts.
 
-After rejection, the item returns to `pending_image`.
+After rejection, the item is offered again by `cards image-batch` — this holds
+even when the template's front image is `Optional` rather than `Required`
+(e.g. `expression-production-v1`). `image-reject` always clears the front
+image's asset regardless of policy, and `image-batch` re-lists any card whose
+template wants a front image (`Required` or `Optional`) and doesn't have one
+assigned — it does **not** rely on the card's overall completeness, since an
+`Optional` slot missing its asset never makes the card "incomplete" on its
+own. A rejected image must never be left unreplaced just because its slot was
+optional.
 
 ---
 
@@ -357,7 +365,11 @@ Run:
 learnkit cards image-batch --session <session_id> --json
 ```
 
-This returns items currently in `pending_image`.
+This returns every card whose template wants a front image and has none
+assigned yet — whether that image is `Required` (a true `pending_image` card)
+or merely `Optional` and was never resolved or was rejected. Don't assume
+every item here is "incomplete" in `cards validate`'s sense; some are
+complete-but-imageless `Optional` slots that still deserve an image.
 
 Preserve:
 
