@@ -458,6 +458,41 @@ fn cards_build_uses_card_spec_content_for_a_non_vocabulary_item() {
     );
 }
 
+/// `cards set` rejects mojibake-corrupted text the same way `learn vocabulary
+/// add`/`edit` do (both use `learnkit_core::encoding::detect_mojibake`) —
+/// this command didn't exist yet when that guard was first added, so it's
+/// its own regression once `cards set` merged alongside it.
+#[test]
+fn cards_set_rejects_mojibake_stimulus() {
+    let dir = tempfile::tempdir().unwrap();
+    learnkit().arg("init").arg(dir.path()).assert().success();
+    write_generic_learning_item(dir.path(), "li-grammar-mojibake", "grammar");
+
+    let out = learnkit()
+        .arg("cards")
+        .arg("set")
+        .arg("--item")
+        .arg("li-grammar-mojibake")
+        .arg("--activity")
+        .arg("fill-in-the-blank")
+        .arg("--stimulus")
+        .arg("clasificaciÃ³n")
+        .arg("--response")
+        .arg("ok")
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .code(10)
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["code"], "ENCODING_SUSPICIOUS");
+}
+
 /// `cards build` on a non-vocabulary item with no `CardSpec` set yet must
 /// fail with a clear, specific error — never silently generate an empty
 /// card, and never the Hard Guards `BLOCKED`/exit-20 contract (that's

@@ -166,6 +166,35 @@ fn run_set(args: SetArgs) -> i32 {
         }
     };
 
+    for (field, value) in [
+        ("activity", args.activity.as_str()),
+        ("stimulus", args.stimulus.as_str()),
+        ("response", args.response.as_str()),
+    ] {
+        if let Some(suggested) = learnkit_core::encoding::detect_mojibake(value) {
+            return emit_set_error(
+                args.json,
+                LearnKitError::EncodingSuspicious {
+                    field: field.to_string(),
+                    value: value.to_string(),
+                    suggested,
+                },
+            );
+        }
+    }
+    if let Some(feedback) = args.feedback.as_deref() {
+        if let Some(suggested) = learnkit_core::encoding::detect_mojibake(feedback) {
+            return emit_set_error(
+                args.json,
+                LearnKitError::EncodingSuspicious {
+                    field: "feedback".to_string(),
+                    value: feedback.to_string(),
+                    suggested,
+                },
+            );
+        }
+    }
+
     let spec = match card_spec::set(
         &root,
         &item.id,
