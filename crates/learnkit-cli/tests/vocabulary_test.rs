@@ -525,3 +525,67 @@ fn learn_vocabulary_edit_example_replaces_list_when_supplied() {
     // Untouched fields remain.
     assert_eq!(after.part_of_speech.as_deref(), Some("noun"));
 }
+
+/// Encoding guard: a `--sense` (or `--lemma`) value showing the classic
+/// "UTF-8 misread as a legacy codepage" mojibake pattern — e.g. produced by
+/// a BOM-less `.ps1` script run under Windows PowerShell 5.1 — must be
+/// rejected explicitly (exit 10, code ENCODING_SUSPICIOUS) rather than
+/// silently persisted as corrupted vocabulary data.
+#[test]
+fn learn_vocabulary_add_rejects_mojibake_sense() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, source_id) = new_session_with_notes(dir.path());
+
+    let out = learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("add")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--lemma")
+        .arg("classification")
+        .arg("--sense")
+        .arg("clasificaciÃ³n")
+        .arg("--source")
+        .arg(&source_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .failure()
+        .code(10)
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["code"], "ENCODING_SUSPICIOUS");
+}
+
+/// Regression: correctly-accented text (not mojibake) must keep working
+/// normally — the encoding guard must never produce false positives on
+/// legitimate accented input.
+#[test]
+fn learn_vocabulary_add_allows_correct_accented_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let (session_id, source_id) = new_session_with_notes(dir.path());
+
+    learnkit()
+        .arg("learn")
+        .arg("vocabulary")
+        .arg("add")
+        .arg("--session")
+        .arg(&session_id)
+        .arg("--lemma")
+        .arg("classification")
+        .arg("--sense")
+        .arg("clasificación")
+        .arg("--source")
+        .arg(&source_id)
+        .arg("--path")
+        .arg(dir.path())
+        .arg("--json")
+        .assert()
+        .success();
+}

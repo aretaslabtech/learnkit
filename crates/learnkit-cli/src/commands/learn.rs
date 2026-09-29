@@ -135,6 +135,23 @@ pub fn run(args: LearnArgs) -> i32 {
 }
 
 fn run_add(args: AddArgs) -> i32 {
+    if let Some(code) = check_encoding(args.json, "lemma", &args.lemma) {
+        return code;
+    }
+    if let Some(code) = check_encoding(args.json, "sense", &args.sense) {
+        return code;
+    }
+    if let Some(ipa) = &args.ipa {
+        if let Some(code) = check_encoding(args.json, "ipa", ipa) {
+            return code;
+        }
+    }
+    for example in &args.example {
+        if let Some(code) = check_encoding(args.json, "example", example) {
+            return code;
+        }
+    }
+
     let root = args.path.unwrap_or_else(|| PathBuf::from("."));
     let variety = args.variety.unwrap_or_else(|| "en-GB".to_string());
 
@@ -378,6 +395,22 @@ fn run_remove(args: RemoveArgs) -> i32 {
 /// never be edited by hand. Same "lemma not found" failure pattern as
 /// `run_remove` (exit 40).
 fn run_edit(args: EditArgs) -> i32 {
+    if let Some(sense) = &args.sense {
+        if let Some(code) = check_encoding(args.json, "sense", sense) {
+            return code;
+        }
+    }
+    if let Some(ipa) = &args.ipa {
+        if let Some(code) = check_encoding(args.json, "ipa", ipa) {
+            return code;
+        }
+    }
+    for example in &args.example {
+        if let Some(code) = check_encoding(args.json, "example", example) {
+            return code;
+        }
+    }
+
     let root = args.path.unwrap_or_else(|| PathBuf::from("."));
 
     let mut vocab = match find_by_lemma(&root, &args.lemma) {
@@ -442,6 +475,24 @@ fn run_edit(args: EditArgs) -> i32 {
         println!("Vocabulario editado: {} ({})", vocab.lemma, vocab.id);
     }
     0
+}
+
+/// Rejects a free-text CLI argument that shows the classic
+/// "UTF-8 misread as a legacy codepage" mojibake pattern (e.g. a BOM-less
+/// `.ps1` script read by Windows PowerShell 5.1) rather than silently
+/// persisting corrupted vocabulary data. Returns the exit code to return
+/// immediately when the field is suspect, or `None` when it is clean.
+fn check_encoding(json: bool, field: &str, value: &str) -> Option<i32> {
+    learnkit_core::encoding::detect_mojibake(value).map(|suggested| {
+        emit_error(
+            json,
+            LearnKitError::EncodingSuspicious {
+                field: field.to_string(),
+                value: value.to_string(),
+                suggested,
+            },
+        )
+    })
 }
 
 fn emit_error(json: bool, err: LearnKitError) -> i32 {
