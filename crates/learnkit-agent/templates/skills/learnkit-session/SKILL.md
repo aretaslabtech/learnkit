@@ -71,6 +71,18 @@ Do not infer that a phase is complete merely because files exist.
 
 Do not mark phases complete manually.
 
+### Accumulated level
+
+Once per session, right after resolving the session and before deciding what to do with its material, run:
+
+`learnkit learn level show`
+
+(The level is project-level, not per-session — it takes no `--session` flag.)
+
+Do this even when nothing else in this step depends on the result. Recording the level here means no downstream skill (`learnkit-analyse`, `learnkit-language`) has to rediscover it on its own.
+
+If no level is stored yet, continue with an unknown level, exactly as `learnkit-language` section 21 already specifies. Do not repeat that logic here — just make sure the check happens.
+
 ## 5. Inspect sources and inventory
 
 Determine whether the session already contains the material required for the user's request.
@@ -148,6 +160,17 @@ Check the prerequisites required by the assessment workflow and invoke the suppo
 Ingest and inventory the material.
 
 Do not automatically run analysis, vocabulary extraction, cards, or assessments unless the user's request implies that broader processing.
+
+### User supplies new class material without naming a specific phase
+
+When the user hands over new class documentation and does not ask for a specific named phase, propose — do not silently run — the default pipeline for this material:
+
+1. `learnkit-analyse` — summary, mind map, concept pages (including grammar).
+2. `learnkit-language` — vocabulary, dialogues, pronunciation. For any grammar page, dialogue, or minimal pair the user confirms is worth a flashcard, that skill uses `learn item promote` followed by `cards set`.
+3. `learnkit cards build`.
+4. The exporters, offered explicitly by name: `export study-guide` (Markdown study guide), `export study-pack` (10-tab Excel workbook), `export anki` (Anki `.apkg` package), and `export exam` (self-contained HTML exam). Ask which of these the user wants generated — never run them without saying so first.
+
+This is a suggested sequence, not a mandatory one. If the user asks for one specific phase, do only that phase.
 
 ## 8. Respect completed and pending work
 
