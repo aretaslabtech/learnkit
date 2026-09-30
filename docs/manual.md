@@ -262,6 +262,53 @@ learnkit learn vocabulary add \
 - Si la misma expresión ya existe de una sesión anterior, se reutiliza — no se duplica.
 - `--suggested-by agent` en vez de `manual` si viene de una sugerencia de tu agente (ver [§12](#12-usar-un-agente-claudecodex-para-sugerir-vocabulario)).
 - `--ipa` (opcional) y `--example` (opcional, repetible) alimentan directamente el reverso de la tarjeta (§8) cuando los suministras — ninguno de los dos es obligatorio para que la entrada quede completa.
+- `--topic "<texto>"` (opcional): el tema o unidad pedagógica de la entrada (p. ej. "Meet & Greet", "Numbers") — agrupa el vocabulario por concepto en vez de solo cronológicamente. `--notes "<texto>"` (opcional): observaciones que no encajan en `--sense`/`--ipa`/`--example` (plural irregular, falso amigo, registro formal/informal). Ambos también están disponibles en `learn vocabulary edit`.
+
+### 7.1 Diálogos
+
+Conserva una situación comunicativa completa (presentarse, pedir algo, despedirse) como unidad reutilizable, en vez de trocearla en vocabulario suelto:
+
+```bash
+learnkit learn dialogue set \
+  --session <session_id> \
+  --id d1 \
+  --origin class \
+  --line "Teacher: What's your name?" \
+  --line "Student: My name is Ana." \
+  --note "Presentarse" \
+  --json
+```
+
+- `--origin` es `class` (ocurrió, o algo muy parecido, en la sesión) o `added` (se añade después para consolidar estructuras ya vistas, sin subir el nivel) — nunca marques `class` algo inventado.
+- `--line` es repetible, obligatorio al menos dos veces; cada una es `"Hablante: texto"`, dividido por el primer `": "` literal.
+- `learn dialogue set` es upsert por `--id`. Para borrar: `learnkit learn dialogue remove --session <session_id> --id d1`.
+
+### 7.2 Pronunciación — pares mínimos
+
+Registra un contraste fonético explícito entre dos palabras (no la pronunciación de una palabra suelta, para eso ya sirve `--ipa` en vocabulario):
+
+```bash
+learnkit learn pronunciation set \
+  --session <session_id> \
+  --id p1 \
+  --word-a "sheets" --ipa-a "ʃiːts" \
+  --word-b "shits" --ipa-b "ʃɪts" \
+  --note "vocal larga vs corta" \
+  --json
+```
+
+Upsert por `--id`. Para borrar: `learnkit learn pronunciation remove --session <session_id> --id p1`.
+
+### 7.3 Nivel acumulado
+
+Un único nivel a nivel de proyecto (no por sesión), para no introducir contenido muy por encima de lo ya trabajado:
+
+```bash
+learnkit learn level set --language en --variety en-GB --level A2 --notes "..." --json
+learnkit learn level show --json
+```
+
+`learn level set` sobrescribe el nivel anterior por completo (no guarda historial). `learn level show` no falla si nunca se guardó ninguno — devuelve que no hay nivel registrado.
 
 ## 8. Generar tarjetas
 
@@ -287,9 +334,27 @@ Cada tarjeta aparece como `complete`, `pending_image` o `pending_audio`. Una tar
 
 **Cuidado con los recursos opcionales**: algunos lados de algunas plantillas piden un recurso solo como `Optional` (en `image-to-production-v1` ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso `Optional` sin resolver sigue apareciendo `complete`, porque no era obligatorio. Revisa siempre `media_warnings` en la salida de `cards build --json` (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada.
 
+### 8.0 Crear el `LearningItem` para contenido no-vocabulario (`learn item promote`)
+
+Antes de `cards set` hace falta un `LearningItem`. Para vocabulario lo crea `learn vocabulary add` automáticamente; para una página de gramática (`ConceptPage` de `analyse`), un diálogo (`learn dialogue set`) o un par mínimo de pronunciación (`learn pronunciation set`) ya confirmados, usa:
+
+```bash
+learnkit learn item promote \
+  --session <session_id> \
+  --kind grammar \
+  --source-id page:<page_id> \
+  --json
+```
+
+- `--kind` es `grammar`, `dialogue` o `pronunciation`.
+- `--source-id` es el id del origen: el `ConceptPage.id` (con su prefijo `page:`) para gramática, el `id` del diálogo para `dialogue`, el `id` del par para `pronunciation`.
+- Falla con un error claro si el origen no existe para esa sesión.
+- Es idempotente: promover el mismo `--source-id` dos veces devuelve el mismo `learning_item_id`, nunca crea un duplicado.
+- Devuelve `learning_item_id` — pásalo a `cards set` (ver 8.1) para darle contenido de tarjeta.
+
 ### 8.1 Tarjetas para contenido no-vocabulario (`CardSpec`)
 
-`cards build` no está limitado a vocabulario. Cualquier `LearningItem` cuyo `kind` no sea `"vocabulary"` (gramática, un diálogo, una enumeración de C#, una rúbrica de Clean Code, geografía...) también puede tener una tarjeta generada, siempre que exista un `LearningItem` para él (creado por otra vía — este comando no lo crea) y le des contenido con `cards set`:
+`cards build` no está limitado a vocabulario. Cualquier `LearningItem` cuyo `kind` no sea `"vocabulary"` (gramática, un diálogo, un par mínimo de pronunciación, una enumeración de C#, una rúbrica de Clean Code, geografía...) también puede tener una tarjeta generada, siempre que exista un `LearningItem` para él (créalo con `learn item promote`, ver 8.0, o por otra vía) y le des contenido con `cards set`:
 
 ```bash
 learnkit cards set \
@@ -481,7 +546,11 @@ arrancar cada mitad de este flujo.
 | `learnkit analyse skip <item_id> --session <id> --reason "<r>"` | Omite explícitamente un elemento pendiente, sin confirmar contenido real. |
 | `learnkit consolidate --session <id> [--json]` | Deriva y deduplica candidatos de vocabulario a partir del análisis. |
 | `learnkit consolidate list --session <id> [--json]` | Lista los candidatos ya persistidos de la sesión. |
-| `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual] [--ipa <ipa>] [--example <e>]...` | Confirma una entrada de vocabulario. `--ipa`/`--example` son opcionales y alimentan el reverso de la tarjeta. |
+| `learnkit learn vocabulary add --session <id> --lemma "<t>" --sense "<s>" --source <id> [--locator <l>] [--suggested-by agent\|manual] [--ipa <ipa>] [--example <e>]... [--topic <t>] [--notes <n>]` | Confirma una entrada de vocabulario. `--ipa`/`--example`/`--topic`/`--notes` son opcionales; `--ipa`/`--example` alimentan el reverso de la tarjeta. |
+| `learnkit learn dialogue set --session <id> --id <did> --origin class\|added --line "<Hablante>: <texto>"... [--note <n>]` | Confirma un diálogo (§7.1), upsert por `--id`. `learnkit learn dialogue remove --session <id> --id <did>` lo borra. |
+| `learnkit learn pronunciation set --session <id> --id <pid> --word-a <w> --ipa-a <ipa> --word-b <w> --ipa-b <ipa> [--note <n>]` | Confirma un par mínimo de pronunciación (§7.2), upsert por `--id`. `learnkit learn pronunciation remove --session <id> --id <pid>` lo borra. |
+| `learnkit learn level set --language <l> --variety <v> --level <lvl> [--notes <n>]` / `learnkit learn level show` | Guarda o consulta el nivel acumulado del proyecto (§7.3, no por sesión). |
+| `learnkit learn item promote --session <id> --kind grammar\|dialogue\|pronunciation --source-id <id> [--json]` | Crea o reutiliza (idempotente) el `LearningItem` de una página de gramática/diálogo/par mínimo confirmado, previo a `cards set` — ver [§8.0](#80-crear-el-learningitem-para-contenido-no-vocabulario-learn-item-promote). |
 | `learnkit cards build --session <id> [--template <id>]` | Genera tarjetas a partir del vocabulario (o, para un `LearningItem` no-vocabulario, de su `CardSpec` — ver [§8.1](#81-tarjetas-para-contenido-no-vocabulario-cardspec)). |
 | `learnkit cards validate --session <id> [--json]` | Comprueba qué tarjetas están completas. |
 | `learnkit cards set --item <learning_item_id> --activity <a> --stimulus <s> --response <r> [--feedback <f>] [--json]` | Crea o reemplaza el `CardSpec` de un `LearningItem` no-vocabulario (upsert). |

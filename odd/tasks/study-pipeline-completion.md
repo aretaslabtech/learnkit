@@ -70,8 +70,12 @@
 - [x] T5 `learnkit-language/SKILL.md`: secciones 19/20/23 actualizadas con el camino real a Anki.
 - [x] T6 `learnkit-cards/SKILL.md`: mención de tarjetas no-vocabulario si hace falta.
 - [x] T7 `learnkit-analyse/SKILL.md`: no fue necesario — no se tocó (ver Progreso).
-- [ ] T8 Documentación (`docs/manual.md`/`.html`).
-- [ ] T9 `cargo build/test/clippy --workspace` en verde; commits; `cargo install` al cerrar.
+- [x] T8 Documentación (`docs/manual.md`/`.html`): nueva sección 8.0 (`learn item promote`), y de paso corregido un hueco preexistente de `language-study-pack` (§7.1/7.2/7.3 — diálogos/pronunciación/nivel y `--topic`/`--notes` de vocabulario nunca se habían documentado en el manual, solo en la Skill). Tabla de referencia de comandos actualizada con las 4 filas nuevas.
+- [x] T9 `cargo build/test/clippy --workspace` en verde (verificado tras T8); commits en la rama; `cargo install` pendiente de la decisión de cierre de David (merge a master).
+
+## Progreso (continuación)
+
+**2026-09-30 (Fase D, T8)**: Documentado `learn item promote` (§8.0) en `docs/manual.md`/`.html`. Al revisar el manual para insertar la sección, se detectó que `language-study-pack` (Fase C, T10) documentó `export study-pack` pero omitió por completo `learn dialogue`/`learn pronunciation`/`learn level`/`--topic`/`--notes` de vocabulario — corregido en la misma pasada (§7.1, §7.2, §7.3, más las filas correspondientes en la tabla de referencia de §13). No se tocó código ni Skills en este paso, solo `docs/manual.md`/`.html`.
 
 ## Progreso
 
