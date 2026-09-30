@@ -4,7 +4,7 @@ use learnkit_assessment::build::build_items;
 use learnkit_assessment::item::{load_all_items, save_assessment, save_item, Assessment};
 use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
-use learnkit_profile::language::learning_item::load_all_vocabulary_items;
+use learnkit_profile::language::learning_item::load_all;
 use learnkit_store::session_paths::SessionPaths;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -56,7 +56,7 @@ fn run_build(args: BuildArgs) -> i32 {
     };
     let session_paths = SessionPaths::new(&root, &session_id);
 
-    let learning_items = match load_all_vocabulary_items(&root) {
+    let learning_items = match load_all(&root) {
         Ok(items) => items,
         Err(source) => {
             return emit_error(

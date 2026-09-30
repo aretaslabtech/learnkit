@@ -91,7 +91,7 @@ fn session_with_vocabulary_item(project_root: &std::path::Path) -> (String, Stri
         .success();
 
     let items =
-        learnkit_profile::language::learning_item::load_all_vocabulary_items(project_root)
+        learnkit_profile::language::learning_item::load_all(project_root)
             .unwrap();
     let item = items
         .into_iter()

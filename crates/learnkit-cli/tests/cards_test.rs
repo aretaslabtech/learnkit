@@ -367,7 +367,8 @@ fn write_generic_learning_item(project_root: &std::path::Path, id: &str, kind: &
         summary: "unused-for-a-non-vocabulary-item".to_string(),
         tags: vec![],
         mastery_dimensions: vec![],
-        vocabulary_entry_id: String::new(),
+        vocabulary_entry_id: None,
+        source_ref: None,
     };
     let yaml = serde_yaml::to_string(&item).unwrap();
     std::fs::write(dir.join(format!("{id}.yaml")), yaml).unwrap();
