@@ -16,7 +16,7 @@ use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
 use learnkit_media::asset::{self, AssetOrigin, AssetType};
 use learnkit_media::grid;
-use learnkit_profile::language::learning_item::{load_all_vocabulary_items, LearningItem};
+use learnkit_profile::language::learning_item::{load_all as load_all_items, LearningItem};
 use learnkit_profile::language::vocabulary::find_by_id as find_vocabulary_by_id;
 use learnkit_store::session_paths::SessionPaths;
 use serde::{Deserialize, Serialize};
@@ -235,7 +235,7 @@ pub fn run_image_batch(args: ImageBatchArgs) -> i32 {
     // is deterministic across runs/platforms.
     cards.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let items = match load_all_vocabulary_items(&root) {
+    let items = match load_all_items(&root) {
         Ok(items) => items,
         Err(source) => {
             return emit_error::<ImageBatchData>(
@@ -457,7 +457,7 @@ pub fn run_image_review(args: ImageReviewArgs) -> i32 {
     // directory, whose order isn't guaranteed.
     cards.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let items = match load_all_vocabulary_items(&root) {
+    let items = match load_all_items(&root) {
         Ok(items) => items,
         Err(source) => {
             return emit_error::<ImageReviewData>(
@@ -730,7 +730,7 @@ fn semantic_context(root: &Path, item: &LearningItem) -> (Option<String>, Option
         Some(item.summary.clone())
     };
 
-    let examples = find_vocabulary_by_id(root, &item.vocabulary_entry_id)
+    let examples = find_vocabulary_by_id(root, item.vocabulary_entry_id.as_deref().unwrap_or_default())
         .ok()
         .flatten()
         .map(|entry| {

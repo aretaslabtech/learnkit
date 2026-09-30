@@ -107,7 +107,8 @@ mod tests {
             summary: summary.to_string(),
             tags: vec![],
             mastery_dimensions: vec![],
-            vocabulary_entry_id: format!("vocab-{id}"),
+            vocabulary_entry_id: Some(format!("vocab-{id}")),
+            source_ref: None,
         }
     }
 

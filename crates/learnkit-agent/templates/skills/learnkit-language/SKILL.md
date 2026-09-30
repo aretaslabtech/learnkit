@@ -559,6 +559,17 @@ To remove one:
 learnkit learn dialogue remove --session <session_id> --id <dialogue_id>
 ```
 
+### Turning a confirmed dialogue into a flashcard
+
+Not every dialogue deserves a flashcard — most are worth keeping as a record of what was practised, nothing more. When the user separately confirms that a specific dialogue is worth reviewing as a card, promote it and give it card content:
+
+```
+learnkit learn item promote --session <session_id> --kind dialogue --source-id <dialogue_id>
+learnkit cards set --item <learning_item_id> --activity "..." --stimulus "..." --response "..." [--feedback "..."]
+```
+
+`item promote` creates or reuses the generic `LearningItem` for that dialogue (idempotent — promoting the same `--source-id` twice returns the same `learning_item_id`). It returns the `learning_item_id` to use with `cards set`. A natural mapping is `--stimulus` = the opening line or situational context, `--response` = the expected reply. This is an additional decision on top of persisting the dialogue itself — ask for explicit confirmation before promoting or running `cards set`, the same as before persisting the dialogue.
+
 ## 20. Pronunciation — minimal pairs
 
 This is a different, complementary mechanism from the IPA guidance in section 9. Section 9 is about the pronunciation of a single word. A minimal pair is about an explicit contrast between two words.
@@ -582,6 +593,17 @@ learnkit learn pronunciation set --session <session_id> --id <pair_id> --word-a 
 ```
 learnkit learn pronunciation remove --session <session_id> --id <pair_id>
 ```
+
+### Turning a confirmed minimal pair into a flashcard
+
+As with dialogues, not every minimal pair needs a flashcard. When the user confirms one is worth reviewing:
+
+```
+learnkit learn item promote --session <session_id> --kind pronunciation --source-id <pair_id>
+learnkit cards set --item <learning_item_id> --activity "..." --stimulus "..." --response "..." [--feedback "..."]
+```
+
+Same idempotent `item promote` mechanism as dialogues and grammar — reuses the same `learning_item_id` if promoted again. A natural mapping is `--stimulus` = one member of the pair (or both, asking the learner to distinguish), `--response` = the contrast explained. Confirm explicitly before promoting, same as before persisting the pair itself.
 
 ## 21. Accumulated level
 
@@ -624,6 +646,19 @@ A good grammar page for a language session should have:
 - one explicit, predictable "common mistake" for a Spanish speaker.
 
 As with every other language-learning item in this skill, never persist a grammar page without the user's explicit confirmation.
+
+### Turning a confirmed grammar page into a flashcard
+
+This closes the gap this section used to note ("this skill does not introduce any new command for grammar"): there is now a full path from a confirmed `ConceptPage` to Anki, without `learnkit-language` needing a grammar command of its own.
+
+When the user confirms a grammar page is worth reviewing as a card:
+
+```
+learnkit learn item promote --session <session_id> --kind grammar --source-id page:<page_id>
+learnkit cards set --item <learning_item_id> --activity "..." --stimulus "..." --response "..." [--feedback "..."]
+```
+
+`--source-id` is the `ConceptPage.id`, which already carries the `page:` prefix (e.g. `page:present-simple`) — pass it through as-is. `item promote` derives the card's underlying title/summary from `page.concept`/`page.content`; it is idempotent, same as for dialogues and pronunciation pairs. Not every grammar page needs to become a card — ask for explicit confirmation, same as for every other item in this skill.
 
 ## 24. Final quality check
 

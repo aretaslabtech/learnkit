@@ -524,6 +524,8 @@ Do not duplicate visual-generation or visual-QA logic in this skill.
 
 Use the supported LearnKit card-building workflow.
 
+`cards build` is not limited to vocabulary: a `LearningItem` created from a grammar page, dialogue, or pronunciation minimal pair via `learn item promote` (see `learnkit-language`) and given content via `cards set` builds into a real card the same way a vocabulary item does — `cards set`/`CardSpec` are already generic, this is a clarification of scope, not new behaviour.
+
 Do not modify persisted card state manually.
 
 After building, inspect the structured result and card validation state.

@@ -275,7 +275,41 @@ $ echo $?
   <li>Si la misma expresión ya existe de una sesión anterior, se reutiliza — no se duplica.</li>
   <li><code>--suggested-by agent</code> en vez de <code>manual</code> si viene de una sugerencia de tu agente (ver <a href="#s12">§12</a>).</li>
   <li><code>--ipa</code> (opcional) y <code>--example</code> (opcional, repetible) alimentan directamente el reverso de la tarjeta (§8) cuando los suministras — ninguno de los dos es obligatorio para que la entrada quede completa.</li>
+  <li><code>--topic "&lt;texto&gt;"</code> (opcional): el tema o unidad pedagógica de la entrada (p. ej. "Meet &amp; Greet", "Numbers") — agrupa el vocabulario por concepto en vez de solo cronológicamente. <code>--notes "&lt;texto&gt;"</code> (opcional): observaciones que no encajan en <code>--sense</code>/<code>--ipa</code>/<code>--example</code> (plural irregular, falso amigo, registro formal/informal). Ambos también están disponibles en <code>learn vocabulary edit</code>.</li>
 </ul>
+
+<h3 id="s71">7.1 Diálogos</h3>
+<p>Conserva una situación comunicativa completa (presentarse, pedir algo, despedirse) como unidad reutilizable, en vez de trocearla en vocabulario suelto:</p>
+<pre><code>learnkit learn dialogue set \
+  --session &lt;session_id&gt; \
+  --id d1 \
+  --origin class \
+  --line "Teacher: What's your name?" \
+  --line "Student: My name is Ana." \
+  --note "Presentarse" \
+  --json</code></pre>
+<ul>
+  <li><code>--origin</code> es <code>class</code> (ocurrió, o algo muy parecido, en la sesión) o <code>added</code> (se añade después para consolidar estructuras ya vistas, sin subir el nivel) — nunca marques <code>class</code> algo inventado.</li>
+  <li><code>--line</code> es repetible, obligatorio al menos dos veces; cada una es <code>"Hablante: texto"</code>, dividido por el primer <code>": "</code> literal.</li>
+  <li><code>learn dialogue set</code> es upsert por <code>--id</code>. Para borrar: <code>learnkit learn dialogue remove --session &lt;session_id&gt; --id d1</code>.</li>
+</ul>
+
+<h3 id="s72">7.2 Pronunciación — pares mínimos</h3>
+<p>Registra un contraste fonético explícito entre dos palabras (no la pronunciación de una palabra suelta, para eso ya sirve <code>--ipa</code> en vocabulario):</p>
+<pre><code>learnkit learn pronunciation set \
+  --session &lt;session_id&gt; \
+  --id p1 \
+  --word-a "sheets" --ipa-a "ʃiːts" \
+  --word-b "shits" --ipa-b "ʃɪts" \
+  --note "vocal larga vs corta" \
+  --json</code></pre>
+<p>Upsert por <code>--id</code>. Para borrar: <code>learnkit learn pronunciation remove --session &lt;session_id&gt; --id p1</code>.</p>
+
+<h3 id="s73">7.3 Nivel acumulado</h3>
+<p>Un único nivel a nivel de proyecto (no por sesión), para no introducir contenido muy por encima de lo ya trabajado:</p>
+<pre><code>learnkit learn level set --language en --variety en-GB --level A2 --notes "..." --json
+learnkit learn level show --json</code></pre>
+<p><code>learn level set</code> sobrescribe el nivel anterior por completo (no guarda historial). <code>learn level show</code> no falla si nunca se guardó ninguno — devuelve que no hay nivel registrado.</p>
 
 <h2 id="s8">8. Generar tarjetas</h2>
 <pre><code>learnkit cards build --session &lt;session_id&gt;</code></pre>
@@ -294,8 +328,23 @@ $ echo $?
 <p>Cada tarjeta aparece como <code>complete</code>, <code>pending_image</code> o <code>pending_audio</code>. Una tarjeta <code>pending_*</code> normalmente significa que no había una imagen de Wikimedia con licencia reutilizable para esa expresión (frecuente en modismos como "get away with"), o que el servicio de audio no respondió (revisa tu conexión) — puedes suministrar tú mismo el recurso, o dejarla así (no bloquea al resto).</p>
 <p><strong>Cuidado con los recursos opcionales</strong>: algunos lados de algunas plantillas piden un recurso solo como <code>Optional</code> (en <code>image-to-production-v1</code> ya no es el caso del audio — imagen y audio son obligatorios en ambos lados desde el arreglo de formato — pero otras plantillas sí pueden tener lados opcionales). Una tarjeta con un recurso <code>Optional</code> sin resolver sigue apareciendo <code>complete</code>, porque no era obligatorio. Revisa siempre <code>media_warnings</code> en la salida de <code>cards build --json</code> (o el aviso en modo humano): ahí se lista qué tarjeta, qué lado y por qué motivo no se pudo generar un recurso opcional, aunque la tarjeta en sí no quede bloqueada.</p>
 
+<h3 id="s80">8.0 Crear el LearningItem para contenido no-vocabulario (learn item promote)</h3>
+<p>Antes de <code>cards set</code> hace falta un <code>LearningItem</code>. Para vocabulario lo crea <code>learn vocabulary add</code> automáticamente; para una página de gramática (<code>ConceptPage</code> de <code>analyse</code>), un diálogo (<code>learn dialogue set</code>) o un par mínimo de pronunciación (<code>learn pronunciation set</code>) ya confirmados, usa:</p>
+<pre><code>learnkit learn item promote \
+  --session &lt;session_id&gt; \
+  --kind grammar \
+  --source-id page:&lt;page_id&gt; \
+  --json</code></pre>
+<ul>
+  <li><code>--kind</code> es <code>grammar</code>, <code>dialogue</code> o <code>pronunciation</code>.</li>
+  <li><code>--source-id</code> es el id del origen: el <code>ConceptPage.id</code> (con su prefijo <code>page:</code>) para gramática, el <code>id</code> del diálogo para <code>dialogue</code>, el <code>id</code> del par para <code>pronunciation</code>.</li>
+  <li>Falla con un error claro si el origen no existe para esa sesión.</li>
+  <li>Es idempotente: promover el mismo <code>--source-id</code> dos veces devuelve el mismo <code>learning_item_id</code>, nunca crea un duplicado.</li>
+  <li>Devuelve <code>learning_item_id</code> — pásalo a <code>cards set</code> (ver 8.1) para darle contenido de tarjeta.</li>
+</ul>
+
 <h3 id="s81">8.1 Tarjetas para contenido no-vocabulario (CardSpec)</h3>
-<p><code>cards build</code> no está limitado a vocabulario. Cualquier <code>LearningItem</code> cuyo <code>kind</code> no sea <code>"vocabulary"</code> (gramática, un diálogo, una enumeración de C#, una rúbrica de Clean Code, geografía...) también puede tener una tarjeta generada, siempre que exista un <code>LearningItem</code> para él (creado por otra vía — este comando no lo crea) y le des contenido con <code>cards set</code>:</p>
+<p><code>cards build</code> no está limitado a vocabulario. Cualquier <code>LearningItem</code> cuyo <code>kind</code> no sea <code>"vocabulary"</code> (gramática, un diálogo, un par mínimo de pronunciación, una enumeración de C#, una rúbrica de Clean Code, geografía...) también puede tener una tarjeta generada, siempre que exista un <code>LearningItem</code> para él (créalo con <code>learn item promote</code>, ver 8.0, o por otra vía) y le des contenido con <code>cards set</code>:</p>
 <pre><code>learnkit cards set \
   --item &lt;learning_item_id&gt; \
   --activity "fill-in-the-blank" \
@@ -399,7 +448,11 @@ learnkit progress --skill listening</code></pre>
 <tr><td><code>learnkit analyse skip item_id --session id --reason r</code></td><td>Omite explícitamente un elemento pendiente, sin confirmar contenido real.</td></tr>
 <tr><td><code>learnkit consolidate --session id [--json]</code></td><td>Deriva y deduplica candidatos de vocabulario a partir del análisis.</td></tr>
 <tr><td><code>learnkit consolidate list --session id [--json]</code></td><td>Lista los candidatos ya persistidos de la sesión.</td></tr>
-<tr><td><code>learnkit learn vocabulary add --session id --lemma "t" --sense "s" --source id [--locator l] [--suggested-by agent|manual] [--ipa ipa] [--example e]...</code></td><td>Confirma una entrada de vocabulario. <code>--ipa</code>/<code>--example</code> son opcionales y alimentan el reverso de la tarjeta.</td></tr>
+<tr><td><code>learnkit learn vocabulary add --session id --lemma "t" --sense "s" --source id [--locator l] [--suggested-by agent|manual] [--ipa ipa] [--example e]... [--topic t] [--notes n]</code></td><td>Confirma una entrada de vocabulario. <code>--ipa</code>/<code>--example</code>/<code>--topic</code>/<code>--notes</code> son opcionales; <code>--ipa</code>/<code>--example</code> alimentan el reverso de la tarjeta.</td></tr>
+<tr><td><code>learnkit learn dialogue set --session id --id did --origin class|added --line "Hablante: texto"... [--note n]</code></td><td>Confirma un diálogo (§7.1), upsert por <code>--id</code>. <code>learn dialogue remove --session id --id did</code> lo borra.</td></tr>
+<tr><td><code>learnkit learn pronunciation set --session id --id pid --word-a w --ipa-a ipa --word-b w --ipa-b ipa [--note n]</code></td><td>Confirma un par mínimo de pronunciación (§7.2), upsert por <code>--id</code>. <code>learn pronunciation remove --session id --id pid</code> lo borra.</td></tr>
+<tr><td><code>learnkit learn level set --language l --variety v --level lvl [--notes n]</code> / <code>learn level show</code></td><td>Guarda o consulta el nivel acumulado del proyecto (§7.3, no por sesión).</td></tr>
+<tr><td><code>learnkit learn item promote --session id --kind grammar|dialogue|pronunciation --source-id id [--json]</code></td><td>Crea o reutiliza (idempotente) el <code>LearningItem</code> de una página de gramática/diálogo/par mínimo confirmado, previo a <code>cards set</code> — ver <a href="#s80">§8.0</a>.</td></tr>
 <tr><td><code>learnkit cards build --session id [--template id]</code></td><td>Genera tarjetas a partir del vocabulario (o, para un <code>LearningItem</code> no-vocabulario, de su <code>CardSpec</code> — ver <a href="#s81">§8.1</a>).</td></tr>
 <tr><td><code>learnkit cards validate --session id [--json]</code></td><td>Comprueba qué tarjetas están completas.</td></tr>
 <tr><td><code>learnkit cards set --item id --activity a --stimulus s --response r [--feedback f] [--json]</code></td><td>Crea o reemplaza el <code>CardSpec</code> de un <code>LearningItem</code> no-vocabulario (upsert).</td></tr>

@@ -248,7 +248,7 @@ fn run_build(args: BuildArgs) -> i32 {
     let session_paths = SessionPaths::new(&root, &session_id);
     let assets_dir = session_paths.assets();
 
-    let items = match learnkit_profile::language::learning_item::load_all_vocabulary_items(&root) {
+    let items = match learnkit_profile::language::learning_item::load_all(&root) {
         Ok(items) => items,
         Err(source) => {
             return emit_error(
@@ -413,8 +413,10 @@ fn run_build(args: BuildArgs) -> i32 {
                     &mut media_warnings,
                 );
 
-                let vocabulary_entry =
-                    match find_vocabulary_by_id(&root, &item.vocabulary_entry_id) {
+                let vocabulary_entry = match find_vocabulary_by_id(
+                    &root,
+                    item.vocabulary_entry_id.as_deref().unwrap_or_default(),
+                ) {
                         Ok(v) => v,
                         Err(source) => {
                             return emit_error(
@@ -993,7 +995,8 @@ mod tests {
             summary: summary.to_string(),
             tags: vec![],
             mastery_dimensions: vec![],
-            vocabulary_entry_id: "vocab-1".to_string(),
+            vocabulary_entry_id: Some("vocab-1".to_string()),
+            source_ref: None,
         }
     }
 

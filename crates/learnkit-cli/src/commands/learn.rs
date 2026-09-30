@@ -3,11 +3,14 @@ use clap::{Args, Subcommand};
 use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
 use learnkit_profile::language::dialogue::{self, DialogueLine, DialogueOrigin};
-use learnkit_profile::language::learning_item::{ensure_for_vocabulary, find_by_vocabulary_entry};
+use learnkit_profile::language::learning_item::{
+    ensure_for_vocabulary, ensure_generic, find_by_vocabulary_entry,
+};
 use learnkit_profile::language::level;
 use learnkit_profile::language::pronunciation;
 use learnkit_profile::language::vocabulary::{add_or_reuse, find_by_lemma, set_fields};
 use learnkit_store::session_paths::SessionPaths;
+use learnkit_workflow::analysis::list_concept_pages;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -23,6 +26,7 @@ enum LearnAction {
     Dialogue(DialogueArgs),
     Pronunciation(PronunciationArgs),
     Level(LevelArgs),
+    Item(ItemArgs),
 }
 
 #[derive(Args)]
@@ -272,6 +276,40 @@ struct LevelShowArgs {
     json: bool,
 }
 
+#[derive(Args)]
+struct ItemArgs {
+    #[command(subcommand)]
+    action: ItemAction,
+}
+
+#[derive(Subcommand)]
+enum ItemAction {
+    /// Promotes a confirmed grammar/dialogue/pronunciation source into a
+    /// generic `LearningItem` (`ensure_generic`) so it can receive a
+    /// `CardSpec` via the already-existing `cards set` and reach Anki via
+    /// `cards build`/`export anki` — `odd/tasks/study-pipeline-completion.md`
+    /// T3. Vocabulary never goes through here — `learn vocabulary add`
+    /// already creates its own `LearningItem` (`ensure_for_vocabulary`).
+    Promote(ItemPromoteArgs),
+}
+
+#[derive(Args)]
+struct ItemPromoteArgs {
+    #[arg(long)]
+    session: Option<String>,
+    /// `grammar` (`--source-id` is a `ConceptPage.id`, e.g. `"page:layover"`),
+    /// `dialogue` (`--source-id` is a `Dialogue.id`), or `pronunciation`
+    /// (`--source-id` is a `MinimalPair.id`).
+    #[arg(long)]
+    kind: String,
+    #[arg(long = "source-id")]
+    source_id: String,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
 #[derive(Debug, Serialize, Default)]
 struct LearnData {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -322,6 +360,9 @@ pub fn run(args: LearnArgs) -> i32 {
         LearnAction::Level(l) => match l.action {
             LevelAction::Set(a) => run_level_set(a),
             LevelAction::Show(a) => run_level_show(a),
+        },
+        LearnAction::Item(i) => match i.action {
+            ItemAction::Promote(a) => run_item_promote(a),
         },
     }
 }
@@ -1030,6 +1071,185 @@ fn run_level_show(args: LevelShowArgs) -> i32 {
                 println!("Todavía no se ha establecido ningún nivel.");
             }
         }
+    }
+    0
+}
+
+/// `ConceptPage.content` can be long (a full grammar explanation); the
+/// generic `LearningItem.summary` is meant to be a short reference, not a
+/// re-export of the whole page, so it's truncated here. 500 chars is roomy
+/// enough to keep the point of the grammar point while staying well short of
+/// a full page — an arbitrary but documented choice, not derived from any
+/// spec value.
+const CONCEPT_PAGE_SUMMARY_MAX_CHARS: usize = 500;
+
+/// Truncates `s` to at most `max_chars` **characters** (not bytes), appending
+/// `"..."` when truncated, and never splitting a multi-byte UTF-8 character.
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        return s.to_string();
+    }
+    let mut truncated: String = s.chars().take(max_chars).collect();
+    truncated.push_str("...");
+    truncated
+}
+
+/// `learn item promote --session <id> --kind grammar|dialogue|pronunciation
+/// --source-id <id>` — `odd/tasks/study-pipeline-completion.md` T3. The only
+/// creator of a non-vocabulary `LearningItem`. Idempotent: promoting the same
+/// `--source-id` (for the same `--kind`/session) twice returns the same
+/// `learning_item_id` rather than creating a duplicate (`ensure_generic`'s
+/// `source_ref` upsert).
+///
+/// Title/summary here are read straight from an already-persisted
+/// `ConceptPage`/`Dialogue`/`MinimalPair` — text that either already passed
+/// `check_encoding` when it was first typed by a user (dialogue/pronunciation
+/// `--line`/`--word-*`/`--note`), or is agent-authored prose that was never
+/// subject to that guard in the first place (`ConceptPage.content`, via
+/// `analyse set`). Promoting doesn't introduce any new user-typed text, so it
+/// deliberately doesn't re-run `check_encoding` here.
+fn run_item_promote(args: ItemPromoteArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error(args.json, err),
+    };
+    let session_root = SessionPaths::new(&root, &session_id).root().to_path_buf();
+
+    let (title, summary, tags): (String, String, Vec<String>) = match args.kind.as_str() {
+        "grammar" => {
+            let pages = match list_concept_pages(&root, &session_id) {
+                Ok(p) => p,
+                Err(source) => {
+                    return emit_error(args.json, io_error_to_learnkit(&root, source));
+                }
+            };
+            match pages.into_iter().find(|p| p.id == args.source_id) {
+                Some(page) => (
+                    page.concept,
+                    truncate_chars(&page.content, CONCEPT_PAGE_SUMMARY_MAX_CHARS),
+                    vec!["grammar".to_string()],
+                ),
+                None => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::ExporterConstraint {
+                            message: format!(
+                                "no concept page found with id '{}' in session '{session_id}'",
+                                args.source_id
+                            ),
+                        },
+                    )
+                }
+            }
+        }
+        "dialogue" => {
+            let dialogues = match dialogue::load_all(&session_root) {
+                Ok(d) => d,
+                Err(source) => {
+                    return emit_error(args.json, io_error_to_learnkit(&session_root, source))
+                }
+            };
+            match dialogues.into_iter().find(|d| d.id == args.source_id) {
+                Some(dlg) => {
+                    let title = dlg
+                        .lines
+                        .first()
+                        .map(|line| format!("{}: {}", line.speaker, line.text))
+                        .unwrap_or_else(|| format!("Dialogue {}", dlg.id));
+                    let summary = dlg
+                        .lines
+                        .iter()
+                        .map(|line| format!("{}: {}", line.speaker, line.text))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (
+                        truncate_chars(&title, 120),
+                        summary,
+                        vec!["dialogue".to_string()],
+                    )
+                }
+                None => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::ExporterConstraint {
+                            message: format!(
+                                "no dialogue found with id '{}' in session '{session_id}'",
+                                args.source_id
+                            ),
+                        },
+                    )
+                }
+            }
+        }
+        "pronunciation" => {
+            let pairs = match pronunciation::load_all(&session_root) {
+                Ok(p) => p,
+                Err(source) => {
+                    return emit_error(args.json, io_error_to_learnkit(&session_root, source))
+                }
+            };
+            match pairs.into_iter().find(|p| p.id == args.source_id) {
+                Some(pair) => {
+                    let title = format!("{} vs {}", pair.word_a, pair.word_b);
+                    let summary = pair
+                        .note
+                        .clone()
+                        .unwrap_or_else(|| format!("{} vs {}", pair.ipa_a, pair.ipa_b));
+                    (title, summary, vec!["pronunciation".to_string()])
+                }
+                None => {
+                    return emit_error(
+                        args.json,
+                        LearnKitError::ExporterConstraint {
+                            message: format!(
+                                "no minimal pair found with id '{}' in session '{session_id}'",
+                                args.source_id
+                            ),
+                        },
+                    )
+                }
+            }
+        }
+        other => {
+            return emit_error(
+                args.json,
+                LearnKitError::ValidationFailed {
+                    message: format!(
+                        "--kind must be 'grammar', 'dialogue' or 'pronunciation', got '{other}'"
+                    ),
+                },
+            )
+        }
+    };
+
+    let source_ref = format!("{}:{session_id}:{}", args.kind, args.source_id);
+
+    let item = match ensure_generic(&root, &args.kind, &source_ref, &title, &summary, tags) {
+        Ok(i) => i,
+        Err(source) => {
+            return emit_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    if args.json {
+        Envelope::ok(
+            "LEARNING_ITEM_PROMOTED",
+            LearnData {
+                learning_item_id: Some(item.id),
+                session_id: Some(session_id),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!("{}", item.id);
     }
     0
 }
