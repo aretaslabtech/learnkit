@@ -45,6 +45,15 @@ pub struct VocabularyEntry {
     /// `ipa`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub examples: Vec<Example>,
+    /// Free-text topic/unit this entry belongs to (e.g. "Unit 5 — Food") —
+    /// `odd/tasks/language-study-pack.md` T1. Same backward-compatibility
+    /// contract as `ipa`/`examples`: `#[serde(default)]` so an
+    /// already-persisted entry without this key still deserializes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topic: Option<String>,
+    /// Free-text notes about this entry — same contract as `topic`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 fn vocabulary_dir(project_root: &Path) -> PathBuf {
@@ -102,6 +111,15 @@ fn save(project_root: &Path, entry: &VocabularyEntry) -> std::io::Result<()> {
     learnkit_core::atomic::write_atomic(&path, yaml.as_bytes())
 }
 
+/// Lists every persisted `VocabularyEntry`, project-wide — used by
+/// `learnkit export study-pack` (`odd/tasks/language-study-pack.md` T8) to
+/// populate the "Vocabulario"/"Expresiones" tabs. Minimal public wrapper
+/// around the existing private `load_all`; no change to the data model or
+/// persistence format.
+pub fn list_all(project_root: &Path) -> std::io::Result<Vec<VocabularyEntry>> {
+    load_all(project_root)
+}
+
 /// Finds an existing entry with the same normalized `lemma`, project-wide
 /// (vocabulary survives across sessions — FR-011).
 pub fn find_by_lemma(project_root: &Path, lemma: &str) -> std::io::Result<Option<VocabularyEntry>> {
@@ -148,6 +166,8 @@ pub fn add_or_reuse(
         suggested_by: suggested_by.map(|s| s.to_string()),
         ipa: None,
         examples: Vec::new(),
+        topic: None,
+        notes: None,
     };
     save(project_root, &entry)?;
     Ok(entry)
@@ -173,11 +193,14 @@ pub fn find_by_id(project_root: &Path, id: &str) -> std::io::Result<Option<Vocab
 /// supplied (`None`/empty leaves the existing persisted value alone), so a
 /// later `add_or_reuse` call for the same lemma without these flags never
 /// wipes out previously recorded IPA/examples.
+#[allow(clippy::too_many_arguments)]
 pub fn set_details(
     project_root: &Path,
     entry: &mut VocabularyEntry,
     ipa: Option<&str>,
     examples: &[String],
+    topic: Option<&str>,
+    notes: Option<&str>,
 ) -> std::io::Result<()> {
     let mut changed = false;
     if let Some(ipa) = ipa {
@@ -191,6 +214,14 @@ pub fn set_details(
                 text: text.clone(),
             })
             .collect();
+        changed = true;
+    }
+    if let Some(topic) = topic {
+        entry.topic = Some(topic.to_string());
+        changed = true;
+    }
+    if let Some(notes) = notes {
+        entry.notes = Some(notes.to_string());
         changed = true;
     }
     if changed {
@@ -209,6 +240,7 @@ pub fn set_details(
 /// was passed, in which case the CLI passes `Some(&[])`); `None` leaves the
 /// existing examples untouched. `id` and `sources` are never touched here —
 /// editing must never affect entry identity or traceability (FR-012d).
+#[allow(clippy::too_many_arguments)]
 pub fn set_fields(
     project_root: &Path,
     entry: &mut VocabularyEntry,
@@ -216,6 +248,8 @@ pub fn set_fields(
     part_of_speech: Option<&str>,
     ipa: Option<&str>,
     examples: Option<&[String]>,
+    topic: Option<&str>,
+    notes: Option<&str>,
 ) -> std::io::Result<()> {
     let mut changed = false;
     if let Some(sense) = sense {
@@ -243,6 +277,14 @@ pub fn set_fields(
                 text: text.clone(),
             })
             .collect();
+        changed = true;
+    }
+    if let Some(topic) = topic {
+        entry.topic = Some(topic.to_string());
+        changed = true;
+    }
+    if let Some(notes) = notes {
+        entry.notes = Some(notes.to_string());
         changed = true;
     }
     if changed {
@@ -369,6 +411,8 @@ sources:
             &mut entry,
             Some("ˈwaɪtbɔːd"),
             &["Write it on the whiteboard.".to_string()],
+            None,
+            None,
         )
         .unwrap();
 
@@ -380,9 +424,87 @@ sources:
         assert_eq!(reloaded.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
 
         // Calling again with nothing supplied must not wipe the existing values.
-        set_details(dir.path(), &mut entry, None, &[]).unwrap();
+        set_details(dir.path(), &mut entry, None, &[], None, None).unwrap();
         assert_eq!(entry.ipa.as_deref(), Some("ˈwaɪtbɔːd"));
         assert_eq!(entry.examples.len(), 1);
+    }
+
+    /// T1 (language-study-pack): `topic`/`notes` are persisted on creation
+    /// (via `set_details`) and can be edited afterwards (via `set_fields`)
+    /// without disturbing other fields.
+    #[test]
+    fn topic_and_notes_are_persisted_and_editable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut entry = add_or_reuse(
+            dir.path(),
+            "get away with",
+            "hacer algo malo sin castigo",
+            "src-1",
+            None,
+            None,
+            "en-GB",
+        )
+        .unwrap();
+        assert_eq!(entry.topic, None);
+        assert_eq!(entry.notes, None);
+
+        set_details(
+            dir.path(),
+            &mut entry,
+            None,
+            &[],
+            Some("Unit 5 — Idioms"),
+            Some("frequently confused with 'get away'"),
+        )
+        .unwrap();
+
+        assert_eq!(entry.topic.as_deref(), Some("Unit 5 — Idioms"));
+        assert_eq!(
+            entry.notes.as_deref(),
+            Some("frequently confused with 'get away'")
+        );
+
+        let reloaded = find_by_id(dir.path(), &entry.id).unwrap().unwrap();
+        assert_eq!(reloaded.topic.as_deref(), Some("Unit 5 — Idioms"));
+
+        set_fields(
+            dir.path(),
+            &mut entry,
+            None,
+            None,
+            None,
+            None,
+            Some("Unit 6 — Phrasal verbs"),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entry.topic.as_deref(), Some("Unit 6 — Phrasal verbs"));
+        // notes untouched by the edit above.
+        assert_eq!(
+            entry.notes.as_deref(),
+            Some("frequently confused with 'get away'")
+        );
+    }
+
+    /// T1: a YAML entry persisted before `topic`/`notes` existed must still
+    /// deserialize — `#[serde(default)]` is what makes this safe.
+    #[test]
+    fn deserializes_a_legacy_entry_missing_topic_and_notes() {
+        let yaml = r#"
+id: vocab-en-whiteboard-abc123
+language: en
+variety: en-GB
+lemma: whiteboard
+senses:
+  - gloss: pizarra
+sources:
+  - source_id: src-1
+"#;
+        let entry: VocabularyEntry = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(entry.lemma, "whiteboard");
+        assert_eq!(entry.topic, None);
+        assert_eq!(entry.notes, None);
     }
 
     #[test]

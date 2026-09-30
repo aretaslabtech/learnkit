@@ -1023,6 +1023,8 @@ mod tests {
                     text: t.to_string(),
                 })
                 .collect(),
+            topic: None,
+            notes: None,
         }
     }
 

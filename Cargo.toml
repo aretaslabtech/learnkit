@@ -40,6 +40,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 zip = "0.6"
 walkdir = "2"
 image = "0.25"
+rust_xlsxwriter = "0.79"
 
 learnkit-core = { path = "crates/learnkit-core" }
 learnkit-store = { path = "crates/learnkit-store" }

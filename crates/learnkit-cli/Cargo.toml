@@ -27,12 +27,14 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 is-terminal = { workspace = true }
 dialoguer = { workspace = true }
+rust_xlsxwriter = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 assert_cmd = "2"
 image = { workspace = true }
 serde_yaml = { workspace = true }
+calamine = "0.26"
 
 [lints]
 workspace = true

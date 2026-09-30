@@ -377,6 +377,30 @@ sesión (`#`) → `## Resumen` → `## Mapa mental` (si existe) → una sección
 `## <concepto>` por cada página de concepto, en el mismo orden en que se
 confirmaron.
 
+### Exportar el material didáctico completo a Excel (`study-pack`)
+
+Si quieres un único fichero `.xlsx` con todo el material didáctico de la
+sesión — lo aprendido, vocabulario, expresiones, pronunciación, diálogos,
+preguntas de repaso separadas de sus soluciones y las flashcards — usa:
+
+```bash
+learnkit export study-pack --session <session_id> --out dist/material-didactico.xlsx
+```
+
+El libro tiene siempre estas 10 pestañas, en este orden: `Lo aprendido`,
+`Vocabulario`, `Expresiones`, `Pronunciacion`, `Alfabeto` (tabla estática de
+referencia, solo inglés por ahora), `Dialogos`, `Repaso`, `Soluciones`,
+`Flashcards` y `Fuente`. `Repaso` nunca incluye la respuesta correcta —
+está siempre en `Soluciones`, en el mismo orden de preguntas.
+
+`Vocabulario` exporta el vocabulario de todo el proyecto (no solo el de esta
+sesión: `VocabularyEntry` es una entidad de proyecto, no de sesión), mientras
+que diálogos, pares mínimos, tarjetas y preguntas de repaso sí son los de la
+sesión indicada. Si una pestaña no tiene contenido, se exporta igualmente
+con solo la cabecera — el comando únicamente falla (código de salida `40`,
+sin escribir ningún fichero) cuando no hay absolutamente nada exportable en
+ninguna de las 10 categorías.
+
 ## 10. Generar y hacer un examen
 
 ```bash
@@ -468,6 +492,7 @@ arrancar cada mitad de este flujo.
 | `learnkit cards image-reject --session <id> --item <learning_item_id> --reason "<r>" [--json]` | Desvincula la imagen de Wikimedia de esa tarjeta (vuelve a `pending_image`) y registra el motivo del rechazo. |
 | `learnkit export anki --session <id> --out <fichero.apkg> [--skip-incomplete]` | Exporta el mazo. Con `--skip-incomplete`, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué). |
 | `learnkit export study-guide --session <id> --out <fichero.md> [--json]` | Exporta el resumen/mapa mental/páginas de concepto ya confirmados a un único Markdown legible. Falla si no hay `summary` confirmado; mapa mental y páginas son opcionales. |
+| `learnkit export study-pack --session <id> --out <fichero.xlsx> [--json]` | Exporta un `.xlsx` con 10 pestañas (Lo aprendido, Vocabulario, Expresiones, Pronunciacion, Alfabeto, Dialogos, Repaso, Soluciones, Flashcards, Fuente). Falla solo si no hay nada exportable en ninguna categoría. |
 | `learnkit assessment build --session <id>` | Genera el banco de preguntas (recognition/production/listening). |
 | `learnkit export exam --assessment <id> --session <id> --out <fichero.html>` | Genera el examen HTML. |
 | `learnkit attempt import <resultados.json> --assessment <id> --session <id>` | Importa los resultados de un examen. |

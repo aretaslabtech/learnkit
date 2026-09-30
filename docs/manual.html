@@ -348,6 +348,12 @@ $ echo $?
 <p>Requiere que el elemento <code>summary</code> de <code>analyse</code> (<a href="#s5">§5</a>) esté confirmado — si no lo está, el comando falla explícitamente (código de salida <code>40</code>) y no escribe ningún fichero. El mapa mental y las páginas de concepto son opcionales: si no existen, sus secciones simplemente se omiten del documento, sin bloquear la exportación.</p>
 <p>El documento resultante es un único Markdown, en este orden: título de la sesión (<code>#</code>) → <code>## Resumen</code> → <code>## Mapa mental</code> (si existe) → una sección <code>## &lt;concepto&gt;</code> por cada página de concepto, en el mismo orden en que se confirmaron.</p>
 
+<h3>Exportar el material didáctico completo a Excel (<code>study-pack</code>)</h3>
+<p>Si quieres un único fichero <code>.xlsx</code> con todo el material didáctico de la sesión — lo aprendido, vocabulario, expresiones, pronunciación, diálogos, preguntas de repaso separadas de sus soluciones y las flashcards — usa:</p>
+<pre><code>learnkit export study-pack --session &lt;session_id&gt; --out dist/material-didactico.xlsx</code></pre>
+<p>El libro tiene siempre estas 10 pestañas, en este orden: <code>Lo aprendido</code>, <code>Vocabulario</code>, <code>Expresiones</code>, <code>Pronunciacion</code>, <code>Alfabeto</code> (tabla estática de referencia, solo inglés por ahora), <code>Dialogos</code>, <code>Repaso</code>, <code>Soluciones</code>, <code>Flashcards</code> y <code>Fuente</code>. <code>Repaso</code> nunca incluye la respuesta correcta — está siempre en <code>Soluciones</code>, en el mismo orden de preguntas.</p>
+<p><code>Vocabulario</code> exporta el vocabulario de todo el proyecto (no solo el de esta sesión: <code>VocabularyEntry</code> es una entidad de proyecto, no de sesión), mientras que diálogos, pares mínimos, tarjetas y preguntas de repaso sí son los de la sesión indicada. Si una pestaña no tiene contenido, se exporta igualmente con solo la cabecera — el comando únicamente falla (código de salida <code>40</code>, sin escribir ningún fichero) cuando no hay absolutamente nada exportable en ninguna de las 10 categorías.</p>
+
 <h2 id="s10">10. Generar y hacer un examen</h2>
 <pre><code>learnkit assessment build --session &lt;session_id&gt;
 learnkit export exam --assessment &lt;assessment_id&gt; --session &lt;session_id&gt; --out dist/examen.html</code></pre>
@@ -404,6 +410,7 @@ learnkit progress --skill listening</code></pre>
 <tr><td><code>learnkit cards image-reject --session id --item learning_item_id --reason r [--json]</code></td><td>Desvincula la imagen de Wikimedia de esa tarjeta (vuelve a <code>pending_image</code>) y registra el motivo del rechazo.</td></tr>
 <tr><td><code>learnkit export anki --session id --out fichero.apkg [--skip-incomplete]</code></td><td>Exporta el mazo. Con <code>--skip-incomplete</code>, excluye las tarjetas incompletas en vez de fallar (reportando cuáles y por qué).</td></tr>
 <tr><td><code>learnkit export study-guide --session id --out fichero.md [--json]</code></td><td>Exporta el resumen/mapa mental/páginas de concepto ya confirmados a un único Markdown legible. Falla si no hay <code>summary</code> confirmado; mapa mental y páginas son opcionales.</td></tr>
+<tr><td><code>learnkit export study-pack --session id --out fichero.xlsx [--json]</code></td><td>Exporta un <code>.xlsx</code> con 10 pestañas (Lo aprendido, Vocabulario, Expresiones, Pronunciacion, Alfabeto, Dialogos, Repaso, Soluciones, Flashcards, Fuente). Falla solo si no hay nada exportable en ninguna categoría.</td></tr>
 <tr><td><code>learnkit assessment build --session id</code></td><td>Genera el banco de preguntas (recognition/production/listening).</td></tr>
 <tr><td><code>learnkit export exam --assessment id --session id --out fichero.html</code></td><td>Genera el examen HTML.</td></tr>
 <tr><td><code>learnkit attempt import resultados.json --assessment id --session id</code></td><td>Importa los resultados de un examen.</td></tr>

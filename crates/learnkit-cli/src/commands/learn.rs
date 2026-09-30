@@ -2,8 +2,12 @@ use crate::session_context::resolve_session;
 use clap::{Args, Subcommand};
 use learnkit_core::error::LearnKitError;
 use learnkit_core::output::Envelope;
+use learnkit_profile::language::dialogue::{self, DialogueLine, DialogueOrigin};
 use learnkit_profile::language::learning_item::{ensure_for_vocabulary, find_by_vocabulary_entry};
+use learnkit_profile::language::level;
+use learnkit_profile::language::pronunciation;
 use learnkit_profile::language::vocabulary::{add_or_reuse, find_by_lemma, set_fields};
+use learnkit_store::session_paths::SessionPaths;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -16,6 +20,9 @@ pub struct LearnArgs {
 #[derive(Subcommand)]
 enum LearnAction {
     Vocabulary(VocabularyArgs),
+    Dialogue(DialogueArgs),
+    Pronunciation(PronunciationArgs),
+    Level(LevelArgs),
 }
 
 #[derive(Args)]
@@ -73,6 +80,13 @@ struct EditArgs {
     /// must never lose existing data.
     #[arg(long)]
     clear_examples: bool,
+    /// Free-text topic/unit this entry belongs to — T1
+    /// (`odd/tasks/language-study-pack.md`). Omitted leaves it untouched.
+    #[arg(long)]
+    topic: Option<String>,
+    /// Free-text notes — same contract as `--topic`.
+    #[arg(long)]
+    notes: Option<String>,
     #[arg(long)]
     path: Option<PathBuf>,
     #[arg(long)]
@@ -106,6 +120,152 @@ struct AddArgs {
     /// shown on the card back, but every one supplied is persisted.
     #[arg(long = "example")]
     example: Vec<String>,
+    /// Free-text topic/unit this entry belongs to (e.g. "Unit 5 — Food") —
+    /// T1 (`odd/tasks/language-study-pack.md`). Optional.
+    #[arg(long)]
+    topic: Option<String>,
+    /// Free-text notes about this entry. Optional.
+    #[arg(long)]
+    notes: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct DialogueArgs {
+    #[command(subcommand)]
+    action: DialogueAction,
+}
+
+#[derive(Subcommand)]
+enum DialogueAction {
+    /// Persist a confirmed dialogue (upsert by `--id`) — T2
+    /// (`odd/tasks/language-study-pack.md`). At least 2 `--line` are
+    /// required; each is parsed as `"Speaker: text"`.
+    Set(DialogueSetArgs),
+    /// Delete a dialogue, if it exists.
+    Remove(DialogueRemoveArgs),
+}
+
+#[derive(Args)]
+struct DialogueSetArgs {
+    #[arg(long)]
+    session: Option<String>,
+    #[arg(long)]
+    id: String,
+    /// `class` (verbatim from the lesson) or `added` (authored afterwards
+    /// to drill a pattern — never presented as something the teacher said).
+    #[arg(long)]
+    origin: String,
+    /// Repeatable, minimum 2. Each is parsed as `"Speaker: text"` (split on
+    /// the first literal `": "`).
+    #[arg(long = "line")]
+    line: Vec<String>,
+    #[arg(long)]
+    note: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct DialogueRemoveArgs {
+    #[arg(long)]
+    session: Option<String>,
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct PronunciationArgs {
+    #[command(subcommand)]
+    action: PronunciationAction,
+}
+
+#[derive(Subcommand)]
+enum PronunciationAction {
+    /// Persist a confirmed minimal pair (upsert by `--id`) — T3
+    /// (`odd/tasks/language-study-pack.md`).
+    Set(PronunciationSetArgs),
+    /// Delete a minimal pair, if it exists.
+    Remove(PronunciationRemoveArgs),
+}
+
+#[derive(Args)]
+struct PronunciationSetArgs {
+    #[arg(long)]
+    session: Option<String>,
+    #[arg(long)]
+    id: String,
+    #[arg(long = "word-a")]
+    word_a: String,
+    #[arg(long = "ipa-a")]
+    ipa_a: String,
+    #[arg(long = "word-b")]
+    word_b: String,
+    #[arg(long = "ipa-b")]
+    ipa_b: String,
+    #[arg(long)]
+    note: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct PronunciationRemoveArgs {
+    #[arg(long)]
+    session: Option<String>,
+    #[arg(long)]
+    id: String,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct LevelArgs {
+    #[command(subcommand)]
+    action: LevelAction,
+}
+
+#[derive(Subcommand)]
+enum LevelAction {
+    /// Overwrites the single project-level `LanguageLevel` wholesale — T4
+    /// (`odd/tasks/language-study-pack.md`). There is no history, only a
+    /// current level.
+    Set(LevelSetArgs),
+    /// Shows the current `LanguageLevel`, if one has ever been set.
+    Show(LevelShowArgs),
+}
+
+#[derive(Args)]
+struct LevelSetArgs {
+    #[arg(long)]
+    language: String,
+    #[arg(long)]
+    variety: String,
+    #[arg(long)]
+    level: String,
+    #[arg(long)]
+    notes: Option<String>,
+    #[arg(long)]
+    path: Option<PathBuf>,
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args)]
+struct LevelShowArgs {
     #[arg(long)]
     path: Option<PathBuf>,
     #[arg(long)]
@@ -122,6 +282,26 @@ struct LearnData {
     removed_card_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lemma: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dialogue_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    minimal_pair_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    removed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    variety: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    level_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    level_set: Option<bool>,
 }
 
 pub fn run(args: LearnArgs) -> i32 {
@@ -130,6 +310,18 @@ pub fn run(args: LearnArgs) -> i32 {
             VocabularyAction::Add(a) => run_add(a),
             VocabularyAction::Remove(a) => run_remove(a),
             VocabularyAction::Edit(a) => run_edit(a),
+        },
+        LearnAction::Dialogue(d) => match d.action {
+            DialogueAction::Set(a) => run_dialogue_set(a),
+            DialogueAction::Remove(a) => run_dialogue_remove(a),
+        },
+        LearnAction::Pronunciation(p) => match p.action {
+            PronunciationAction::Set(a) => run_pronunciation_set(a),
+            PronunciationAction::Remove(a) => run_pronunciation_remove(a),
+        },
+        LearnAction::Level(l) => match l.action {
+            LevelAction::Set(a) => run_level_set(a),
+            LevelAction::Show(a) => run_level_show(a),
         },
     }
 }
@@ -148,6 +340,16 @@ fn run_add(args: AddArgs) -> i32 {
     }
     for example in &args.example {
         if let Some(code) = check_encoding(args.json, "example", example) {
+            return code;
+        }
+    }
+    if let Some(topic) = &args.topic {
+        if let Some(code) = check_encoding(args.json, "topic", topic) {
+            return code;
+        }
+    }
+    if let Some(notes) = &args.notes {
+        if let Some(code) = check_encoding(args.json, "notes", notes) {
             return code;
         }
     }
@@ -214,6 +416,8 @@ fn run_add(args: AddArgs) -> i32 {
         &mut vocab,
         args.ipa.as_deref(),
         &args.example,
+        args.topic.as_deref(),
+        args.notes.as_deref(),
     ) {
         return emit_error(
             args.json,
@@ -243,8 +447,7 @@ fn run_add(args: AddArgs) -> i32 {
             LearnData {
                 vocabulary_id: Some(vocab.id),
                 learning_item_id: Some(item.id),
-                removed_card_ids: None,
-                lemma: None,
+                ..Default::default()
             },
         )
         .print_json();
@@ -375,7 +578,7 @@ fn run_remove(args: RemoveArgs) -> i32 {
                 vocabulary_id: Some(vocab.id),
                 learning_item_id: item.map(|i| i.id),
                 removed_card_ids: Some(removed_card_ids),
-                lemma: None,
+                ..Default::default()
             },
         )
         .print_json();
@@ -407,6 +610,16 @@ fn run_edit(args: EditArgs) -> i32 {
     }
     for example in &args.example {
         if let Some(code) = check_encoding(args.json, "example", example) {
+            return code;
+        }
+    }
+    if let Some(topic) = &args.topic {
+        if let Some(code) = check_encoding(args.json, "topic", topic) {
+            return code;
+        }
+    }
+    if let Some(notes) = &args.notes {
+        if let Some(code) = check_encoding(args.json, "notes", notes) {
             return code;
         }
     }
@@ -450,6 +663,8 @@ fn run_edit(args: EditArgs) -> i32 {
         args.part_of_speech.as_deref(),
         args.ipa.as_deref(),
         examples,
+        args.topic.as_deref(),
+        args.notes.as_deref(),
     ) {
         return emit_error(
             args.json,
@@ -465,14 +680,356 @@ fn run_edit(args: EditArgs) -> i32 {
             "VOCABULARY_EDITED",
             LearnData {
                 vocabulary_id: Some(vocab.id.clone()),
-                learning_item_id: None,
-                removed_card_ids: None,
                 lemma: Some(vocab.lemma.clone()),
+                ..Default::default()
             },
         )
         .print_json();
     } else {
         println!("Vocabulario editado: {} ({})", vocab.lemma, vocab.id);
+    }
+    0
+}
+
+/// Parses a `--line` value of the form `"Speaker: text"`, splitting on the
+/// first literal `": "`. Returns `None` when the separator is absent — the
+/// caller turns that into a clear `ValidationFailed` error.
+fn parse_dialogue_line(raw: &str) -> Option<DialogueLine> {
+    let (speaker, text) = raw.split_once(": ")?;
+    Some(DialogueLine {
+        speaker: speaker.to_string(),
+        text: text.to_string(),
+    })
+}
+
+/// Maps an `io::Error` from a `learnkit_profile::language::*` module call
+/// into a `LearnKitError`: `ErrorKind::InvalidInput` (a structural
+/// validation failure raised by the module itself, e.g. too few dialogue
+/// lines) becomes `ValidationFailed`; anything else is a real filesystem
+/// problem.
+fn io_error_to_learnkit(path: &std::path::Path, source: std::io::Error) -> LearnKitError {
+    if source.kind() == std::io::ErrorKind::InvalidInput {
+        LearnKitError::ValidationFailed {
+            message: source.to_string(),
+        }
+    } else {
+        LearnKitError::Filesystem {
+            path: path.display().to_string(),
+            source,
+        }
+    }
+}
+
+/// `learn dialogue set --session <id> --id <did> --origin class|added --line
+/// "A: Hello" --line "B: Hi" [--note "..."]` — T2
+/// (`odd/tasks/language-study-pack.md`).
+fn run_dialogue_set(args: DialogueSetArgs) -> i32 {
+    for line in &args.line {
+        if let Some(code) = check_encoding(args.json, "line", line) {
+            return code;
+        }
+    }
+    if let Some(note) = &args.note {
+        if let Some(code) = check_encoding(args.json, "note", note) {
+            return code;
+        }
+    }
+
+    let origin = match args.origin.as_str() {
+        "class" => DialogueOrigin::FromClass,
+        "added" => DialogueOrigin::AddedForConsolidation,
+        other => {
+            return emit_error(
+                args.json,
+                LearnKitError::ValidationFailed {
+                    message: format!(
+                        "--origin must be 'class' or 'added', got '{other}'"
+                    ),
+                },
+            )
+        }
+    };
+
+    let mut lines = Vec::with_capacity(args.line.len());
+    for raw in &args.line {
+        match parse_dialogue_line(raw) {
+            Some(line) => lines.push(line),
+            None => {
+                return emit_error(
+                    args.json,
+                    LearnKitError::ValidationFailed {
+                        message: format!(
+                            "--line '{raw}' is not in the form \"Speaker: text\" (missing ': ' separator)"
+                        ),
+                    },
+                )
+            }
+        }
+    }
+
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error(args.json, err),
+    };
+    let session_root = SessionPaths::new(&root, &session_id).root().to_path_buf();
+
+    let dialogue = match dialogue::set(
+        &session_root,
+        &args.id,
+        &session_id,
+        origin,
+        lines,
+        args.note.as_deref(),
+    ) {
+        Ok(d) => d,
+        Err(source) => return emit_error(args.json, io_error_to_learnkit(&session_root, source)),
+    };
+
+    if args.json {
+        Envelope::ok(
+            "DIALOGUE_SET",
+            LearnData {
+                dialogue_id: Some(dialogue.id),
+                session_id: Some(dialogue.session_id),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!("Diálogo guardado: {}", dialogue.id);
+    }
+    0
+}
+
+/// `learn dialogue remove --session <id> --id <did>` — T2.
+fn run_dialogue_remove(args: DialogueRemoveArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error(args.json, err),
+    };
+    let session_root = SessionPaths::new(&root, &session_id).root().to_path_buf();
+
+    let removed = match dialogue::remove(&session_root, &args.id) {
+        Ok(r) => r,
+        Err(source) => return emit_error(args.json, io_error_to_learnkit(&session_root, source)),
+    };
+
+    if args.json {
+        Envelope::ok(
+            "DIALOGUE_REMOVED",
+            LearnData {
+                dialogue_id: Some(args.id.clone()),
+                removed: Some(removed),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!(
+            "Diálogo {}: {}",
+            if removed { "eliminado" } else { "no existía" },
+            args.id
+        );
+    }
+    0
+}
+
+/// `learn pronunciation set --session <id> --id <pid> --word-a <str>
+/// --ipa-a <str> --word-b <str> --ipa-b <str> [--note "..."]` — T3
+/// (`odd/tasks/language-study-pack.md`). IPA fields are deliberately never
+/// passed through the mojibake guard — real IPA symbols are legitimate
+/// non-ASCII text and must never be confused with mojibake.
+fn run_pronunciation_set(args: PronunciationSetArgs) -> i32 {
+    if let Some(code) = check_encoding(args.json, "word-a", &args.word_a) {
+        return code;
+    }
+    if let Some(code) = check_encoding(args.json, "word-b", &args.word_b) {
+        return code;
+    }
+    if let Some(note) = &args.note {
+        if let Some(code) = check_encoding(args.json, "note", note) {
+            return code;
+        }
+    }
+
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error(args.json, err),
+    };
+    let session_root = SessionPaths::new(&root, &session_id).root().to_path_buf();
+
+    let pair = match pronunciation::set(
+        &session_root,
+        &args.id,
+        &session_id,
+        &args.word_a,
+        &args.ipa_a,
+        &args.word_b,
+        &args.ipa_b,
+        args.note.as_deref(),
+    ) {
+        Ok(p) => p,
+        Err(source) => return emit_error(args.json, io_error_to_learnkit(&session_root, source)),
+    };
+
+    if args.json {
+        Envelope::ok(
+            "MINIMAL_PAIR_SET",
+            LearnData {
+                minimal_pair_id: Some(pair.id),
+                session_id: Some(pair.session_id),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!("Par mínimo guardado: {}", pair.id);
+    }
+    0
+}
+
+/// `learn pronunciation remove --session <id> --id <pid>` — T3.
+fn run_pronunciation_remove(args: PronunciationRemoveArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+    let session_id = match resolve_session(&root, args.session) {
+        Ok(id) => id,
+        Err(err) => return emit_error(args.json, err),
+    };
+    let session_root = SessionPaths::new(&root, &session_id).root().to_path_buf();
+
+    let removed = match pronunciation::remove(&session_root, &args.id) {
+        Ok(r) => r,
+        Err(source) => return emit_error(args.json, io_error_to_learnkit(&session_root, source)),
+    };
+
+    if args.json {
+        Envelope::ok(
+            "MINIMAL_PAIR_REMOVED",
+            LearnData {
+                minimal_pair_id: Some(args.id.clone()),
+                removed: Some(removed),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!(
+            "Par mínimo {}: {}",
+            if removed { "eliminado" } else { "no existía" },
+            args.id
+        );
+    }
+    0
+}
+
+/// `learn level set --language <str> --variety <str> --level <str> [--notes
+/// "..."]` — T4 (`odd/tasks/language-study-pack.md`). Always overwrites the
+/// single project-level `LanguageLevel` wholesale.
+fn run_level_set(args: LevelSetArgs) -> i32 {
+    if let Some(notes) = &args.notes {
+        if let Some(code) = check_encoding(args.json, "notes", notes) {
+            return code;
+        }
+    }
+
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+
+    let entry = match level::set(
+        &root,
+        &args.language,
+        &args.variety,
+        &args.level,
+        args.notes.as_deref(),
+    ) {
+        Ok(e) => e,
+        Err(source) => {
+            return emit_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    if args.json {
+        Envelope::ok(
+            "LANGUAGE_LEVEL_SET",
+            LearnData {
+                language: Some(entry.language),
+                variety: Some(entry.variety),
+                level: Some(entry.level),
+                level_notes: entry.notes,
+                updated_at: Some(entry.updated_at),
+                ..Default::default()
+            },
+        )
+        .print_json();
+    } else {
+        println!("Nivel actualizado: {} ({})", entry.level, entry.variety);
+    }
+    0
+}
+
+/// `learn level show` — T4. Absence of a saved level is a clean "not set
+/// yet" result, never an error.
+fn run_level_show(args: LevelShowArgs) -> i32 {
+    let root = args.path.unwrap_or_else(|| PathBuf::from("."));
+
+    let entry = match level::show(&root) {
+        Ok(e) => e,
+        Err(source) => {
+            return emit_error(
+                args.json,
+                LearnKitError::Filesystem {
+                    path: root.display().to_string(),
+                    source,
+                },
+            )
+        }
+    };
+
+    match entry {
+        Some(entry) => {
+            if args.json {
+                Envelope::ok(
+                    "LANGUAGE_LEVEL_SHOWN",
+                    LearnData {
+                        language: Some(entry.language),
+                        variety: Some(entry.variety),
+                        level: Some(entry.level),
+                        level_notes: entry.notes,
+                        updated_at: Some(entry.updated_at),
+                        level_set: Some(true),
+                        ..Default::default()
+                    },
+                )
+                .print_json();
+            } else {
+                println!(
+                    "Nivel actual: {} ({}), actualizado {}",
+                    entry.level, entry.variety, entry.updated_at
+                );
+            }
+        }
+        None => {
+            if args.json {
+                Envelope::ok(
+                    "LANGUAGE_LEVEL_SHOWN",
+                    LearnData {
+                        level_set: Some(false),
+                        ..Default::default()
+                    },
+                )
+                .print_json();
+            } else {
+                println!("Todavía no se ha establecido ningún nivel.");
+            }
+        }
     }
     0
 }
